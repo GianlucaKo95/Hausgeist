@@ -25,7 +25,7 @@ Freigaberegeln: Kinder geben nichts frei und sehen nur Family, Einkaufsliste und
 
 ## Einrichtung
 
-1. **Supabase:** Projekt anlegen, beide Dateien aus `supabase/migrations/` der Reihe nach im SQL-Editor ausführen, danach `supabase/seed.example.sql` angepasst ausführen.
+1. **Supabase:** Projekt anlegen, alle Dateien aus `supabase/migrations/` der Reihe nach im SQL-Editor ausführen, danach `supabase/seed.example.sql` angepasst ausführen.
 2. **Add-on installieren:** *Einstellungen → Add-ons → Add-on Store → ⋮ → Repositories* → `https://github.com/GianlucaKo95/hausgeist`, dann *Hausgeist* installieren. Der erste Build auf dem Pi dauert einige Minuten.
 3. **Konfigurieren:**
 
