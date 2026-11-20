@@ -1,0 +1,37 @@
+name: Hausgeist
+options:
+  bundleIdPrefix: de.koeven
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    MARKETING_VERSION: "0.3.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""          # in Xcode unter Signing & Capabilities setzen
+targets:
+  Hausgeist:
+    type: application
+    platform: iOS
+    sources:
+      - Hausgeist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.koeven.hausgeist
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: YES
+    info:
+      path: Hausgeist/Info.plist
+      properties:
+        CFBundleDisplayName: Hausgeist
+        UILaunchScreen: {}
+        # Die App spricht den Pi über das VPN per HTTP an (Tailscale/WireGuard
+        # verschlüsselt die Verbindung). Nur lokale/VPN-Adressen sind erlaubt.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+          NSExceptionDomains:
+            ts.net:
+              NSIncludesSubdomains: true
+              NSExceptionAllowsInsecureHTTPLoads: true
+        NSLocalNetworkUsageDescription: Hausgeist verbindet sich mit deinem Home-Assistant-Server.

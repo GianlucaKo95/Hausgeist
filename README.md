@@ -65,23 +65,26 @@ energy:
   grid_power: sensor.netz_leistung
   house_power: sensor.hausverbrauch
 github_token: <fine-grained Token, Issues lesen/schreiben>
-api_token: <langes Zufallstoken für die eigene App>
 daily_brief: "07:30"
 log_level: info
 ```
 
 4. **Chat öffnen:** In der Seitenleiste erscheint **Hausgeist**. Die Person wird über ihren HA-Benutzer erkannt, `users.ha_user_id` muss also gesetzt sein.
 
-## API für die eigene App
+## iOS-App
 
-Port 8099 in der Add-on-Netzwerkkonfiguration freigeben, dann:
+Die eigene App liegt in `ios/` (SwiftUI). Sie bietet Chat, Freigaben und Einstellungen, der Login läuft über Supabase Auth, erreichbar ist der Pi über Tailscale. Die Einrichtung steht in [`ios/README.md`](ios/README.md).
+
+API (Port 8099, über VPN):
 
 ```
-POST /api/chat     {"message": "..."}   → {"reply": "..."}
-POST /api/reset                            neues Gespräch
 GET  /api/me
-Header: Authorization: Bearer <api_token>
-        X-Hausgeist-User: <users.id>
+POST /api/chat                          {"message": "..."} → {"reply": "..."}
+POST /api/reset                         neues Gespräch
+GET  /api/approvals                     offene Zahlungen und Aktionen
+POST /api/approvals/payment/<id>        {"approve": true|false}
+POST /api/approvals/action/<id>         {"approve": true|false}
+Header: Authorization: Bearer <Supabase-Access-Token>
 ```
 
 ## Entwicklung
@@ -102,5 +105,4 @@ npm test      # Build + Tests
 ## Offen
 
 - FinTS-Anbindung (Sparkasse Duisburg, Deutsche Bank, DKB), sobald die Produktregistrierungsnummer da ist
-- Eigene App als Chat-Eingang
 - Echte Bestellung bei Shops mit API; bis dahin enthält die Freigabe die Warenkorb-Links

@@ -1,5 +1,5 @@
 name: Hausgeist
-version: "0.2.0"
+version: "0.3.0"
 slug: hausgeist
 description: Persönliches Agenten-Netzwerk mit Master-Agent und acht Fachagenten
 url: https://github.com/GianlucaKo95/hausgeist
@@ -14,7 +14,7 @@ panel_title: Hausgeist
 ports:
   8099/tcp: null
 ports_description:
-  8099/tcp: API für die eigene App (optional)
+  8099/tcp: API für die Hausgeist-App (über VPN freigeben)
 startup: application
 boot: auto
 homeassistant_api: true
@@ -34,7 +34,6 @@ options:
   ha_entities: []
   energy: {}
   github_token: ""
-  api_token: ""
   daily_brief: "07:30"
   log_level: info
 schema:
@@ -70,6 +69,5 @@ schema:
     grid_power: str?
     house_power: str?
   github_token: password
-  api_token: password
   daily_brief: str?
   log_level: list(debug|info|warn|error)

@@ -180,20 +180,23 @@ export class FinanceAgent {
       await audit({ agent: "finance", action: "decision", level: 2, result: "unknown_user", detail: { haUserId, approvalId } });
       return;
     }
+    const r = await this.decide(user, approvalId, approve);
+    if (!r.ok && user.notify_service) await this.ha.notify(user.notify_service, "Freigabe nicht möglich", r.message);
+  }
 
+  /** Entscheidung über eine Zahlungsfreigabe – aus der HA-Benachrichtigung oder der App. */
+  async decide(user: AppUser, approvalId: string, approve: boolean): Promise<{ ok: boolean; message: string }> {
     const { data: approval } = await db().from("approvals").select("*").eq("id", approvalId).maybeSingle();
-    if (!approval || approval.status !== "pending") {
-      if (user.notify_service) await this.ha.notify(user.notify_service, "Hausgeist", "Diese Freigabe ist bereits entschieden.");
-      return;
-    }
+    if (!approval || approval.status !== "pending") return { ok: false, message: "Diese Freigabe ist bereits entschieden." };
 
     if (approve) {
       const check = canApprove(user, { amount_cents: approval.amount_cents, payee_status: approval.payee_status });
       if (!check.allowed) {
-        if (user.notify_service) await this.ha.notify(user.notify_service, "Freigabe nicht möglich", check.reason);
         await audit({ agent: "finance", action: "decision", level: 2, result: "denied", user_id: user.id, ref_table: "approvals", ref_id: approvalId, detail: { reason: check.reason } });
-        return;
+        return { ok: false, message: check.reason };
       }
+    } else if (user.role === "child") {
+      return { ok: false, message: "Kinder können keine Zahlungen entscheiden." };
     }
 
     // Bedingtes Update: wer zuerst entscheidet, gewinnt.
@@ -203,7 +206,7 @@ export class FinanceAgent {
       .eq("id", approvalId)
       .eq("status", "pending")
       .select("*");
-    if (!updated || updated.length === 0) return;
+    if (!updated || updated.length === 0) return { ok: false, message: "Diese Freigabe ist bereits entschieden." };
 
     await db().from("invoices").update({ status: approve ? "approved" : "rejected" }).eq("id", approval.invoice_id);
     await audit({ agent: "finance", action: "decision", level: 2, result: approve ? "approved" : "rejected", user_id: user.id, ref_table: "approvals", ref_id: approvalId });
@@ -213,9 +216,10 @@ export class FinanceAgent {
       // Admin-Freigabe bestätigt einen neuen Empfänger bzw. eine neue IBAN.
       if (approval.payee_status !== "known") await this.confirmPayee(approval.invoice_id, approval.iban);
       await this.executor.execute(approvalId);
-    } else {
-      await this.executor.fileInvoice(approval.invoice_id, ["abgelehnt"]);
+      return { ok: true, message: "Freigegeben" };
     }
+    await this.executor.fileInvoice(approval.invoice_id, ["abgelehnt"]);
+    return { ok: true, message: "Abgelehnt" };
   }
 
   private async confirmPayee(invoiceId: string, iban: string): Promise<void> {

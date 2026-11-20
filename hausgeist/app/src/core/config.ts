@@ -39,7 +39,6 @@ const Options = z.object({
   ha_entities: z.array(z.string()).default([]),
   energy: Energy.default({}),
   github_token: z.string().default(""),
-  api_token: z.string().default(""),
   daily_brief: z
     .string()
     .regex(/^(([01]\d|2[0-3]):[0-5]\d)?$/, "daily_brief im Format HH:MM")

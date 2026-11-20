@@ -104,18 +104,24 @@ export class ActionService {
       await audit({ agent: "actions", action: "decision", level: 2, result: "unknown_user", detail: { haUserId, id } });
       return true;
     }
+    const r = await this.decide(user, id, ok);
+    if (!r.ok && user.notify_service) await this.ha.notify(user.notify_service, "Freigabe nicht möglich", r.message);
+    return true;
+  }
+
+  /** Darf diese Person über die Aktion entscheiden? (für die Freigabeliste der App) */
+  async canDecide(user: AppUser, act: { kind: ActionKind; amount_cents: number | null; payload: Record<string, unknown> }): Promise<boolean> {
+    const owner = act.kind === "send_mail" ? await this.mailboxOwner(String(act.payload.mailbox)) : null;
+    return canApproveAction(user, { kind: act.kind, amount_cents: act.amount_cents, mailbox_owner_id: owner }).allowed;
+  }
+
+  /** Entscheidung über eine Aktion – aus der HA-Benachrichtigung oder der App. */
+  async decide(user: AppUser, id: string, ok: boolean): Promise<{ ok: boolean; message: string }> {
     const { data: act } = await db().from("actions").select("*").eq("id", id).maybeSingle();
-    if (!act || act.status !== "pending") {
-      if (user.notify_service) await this.ha.notify(user.notify_service, "Hausgeist", "Diese Anfrage ist bereits entschieden.");
-      return true;
-    }
-    if (ok) {
-      const owner = act.kind === "send_mail" ? await this.mailboxOwner(act.payload.mailbox) : null;
-      const check = canApproveAction(user, { kind: act.kind, amount_cents: act.amount_cents, mailbox_owner_id: owner });
-      if (!check.allowed) {
-        if (user.notify_service) await this.ha.notify(user.notify_service, "Freigabe nicht möglich", check.reason);
-        return true;
-      }
+    if (!act || act.status !== "pending") return { ok: false, message: "Diese Anfrage ist bereits entschieden." };
+    if (!(await this.canDecide(user, act))) {
+      // Auch Ablehnen nur durch Berechtigte, sonst könnte jeder Anfragen anderer verwerfen.
+      return { ok: false, message: "Du darfst über diese Anfrage nicht entscheiden." };
     }
     const { data: updated } = await db()
       .from("actions")
@@ -123,15 +129,16 @@ export class ActionService {
       .eq("id", id)
       .eq("status", "pending")
       .select("*");
-    if (!updated?.length) return true;
+    if (!updated?.length) return { ok: false, message: "Diese Anfrage ist bereits entschieden." };
     await audit({ agent: "actions", action: "decision", level: 2, result: ok ? "approved" : "rejected", user_id: user.id, ref_table: "actions", ref_id: id });
-    if (ok) await this.execute(id, user);
-    return true;
+    if (!ok) return { ok: true, message: "Abgelehnt" };
+    const result = await this.execute(id, user);
+    return { ok: true, message: result };
   }
 
-  private async execute(id: string, decider: AppUser): Promise<void> {
+  private async execute(id: string, decider: AppUser): Promise<string> {
     const { data: act } = await db().from("actions").select("*").eq("id", id).single();
-    if (!act || act.status !== "approved") return;
+    if (!act || act.status !== "approved") return "Nicht freigegeben";
     let result: string;
     try {
       result = await this.run(act.kind as ActionKind, act.payload);
@@ -144,6 +151,7 @@ export class ActionService {
       log.error(`Aktion ${id} fehlgeschlagen`, e);
     }
     if (decider.notify_service) await this.ha.notify(decider.notify_service, "Hausgeist", result);
+    return result;
   }
 
   private async run(kind: ActionKind, payload: Record<string, unknown>): Promise<string> {
