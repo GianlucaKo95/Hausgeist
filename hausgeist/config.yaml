@@ -1,0 +1,40 @@
+name: Hausgeist
+version: "0.1.0"
+slug: hausgeist
+description: Persönliches Agenten-Netzwerk – Rechnungen erkennen, freigeben, zahlen und ablegen
+url: https://github.com/GianlucaKo95/hausgeist
+arch:
+  - aarch64
+  - amd64
+init: false
+startup: application
+boot: auto
+homeassistant_api: true
+hassio_api: false
+options:
+  anthropic_api_key: ""
+  model: claude-sonnet-5-5
+  supabase_url: ""
+  supabase_service_key: ""
+  paperless_url: ""
+  paperless_token: ""
+  payment_mode: dryrun
+  mailboxes: []
+  log_level: info
+schema:
+  anthropic_api_key: password
+  model: str
+  supabase_url: url
+  supabase_service_key: password
+  paperless_url: str
+  paperless_token: password
+  payment_mode: list(dryrun|fints)
+  mailboxes:
+    - name: str
+      host: str
+      port: port
+      tls: bool
+      user: str
+      password: password
+      folder: str?
+  log_level: list(debug|info|warn|error)
