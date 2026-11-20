@@ -32,6 +32,40 @@ export class HomeAssistant {
     if (!res.ok) throw new Error(`notify.${service} fehlgeschlagen: ${res.status} ${await res.text()}`);
   }
 
+  async states(): Promise<{ entity_id: string; state: string; attributes: Record<string, unknown>; last_changed: string }[]> {
+    const res = await fetch(`${this.config.haBaseUrl}/states`, { headers: this.headers() });
+    if (!res.ok) throw new Error(`states: ${res.status}`);
+    return res.json() as Promise<{ entity_id: string; state: string; attributes: Record<string, unknown>; last_changed: string }[]>;
+  }
+
+  async state(entityId: string): Promise<{ entity_id: string; state: string; attributes: Record<string, unknown> } | null> {
+    const res = await fetch(`${this.config.haBaseUrl}/states/${entityId}`, { headers: this.headers() });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`state ${entityId}: ${res.status}`);
+    return res.json() as Promise<{ entity_id: string; state: string; attributes: Record<string, unknown> }>;
+  }
+
+  /** Verlauf eines Sensors (für Energieauswertungen). */
+  async history(entityId: string, hours: number): Promise<{ state: string; last_changed: string }[]> {
+    const start = new Date(Date.now() - hours * 3_600_000).toISOString();
+    const res = await fetch(
+      `${this.config.haBaseUrl}/history/period/${start}?filter_entity_id=${entityId}&minimal_response&no_attributes`,
+      { headers: this.headers() },
+    );
+    if (!res.ok) throw new Error(`history ${entityId}: ${res.status}`);
+    const data = (await res.json()) as { state: string; last_changed: string }[][];
+    return data[0] ?? [];
+  }
+
+  async callService(domain: string, service: string, data: Record<string, unknown>): Promise<void> {
+    const res = await fetch(`${this.config.haBaseUrl}/services/${domain}/${service}`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(`${domain}.${service} fehlgeschlagen: ${res.status} ${await res.text()}`);
+  }
+
   /**
    * Lauscht auf Klicks in Benachrichtigungen. Liefert die Action und die
    * Home-Assistant-Benutzer-ID der Person, die geklickt hat.

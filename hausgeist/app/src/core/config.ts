@@ -9,6 +9,19 @@ const Mailbox = z.object({
   user: z.string(),
   password: z.string(),
   folder: z.string().optional(),
+  smtp_host: z.string().optional(),
+  smtp_port: z.number().int().optional(),
+  from_name: z.string().optional(),
+});
+
+const Calendar = z.object({ name: z.string(), owner: z.string() });
+
+const Energy = z.object({
+  pv_power: z.string().optional(),
+  battery_soc: z.string().optional(),
+  battery_power: z.string().optional(),
+  grid_power: z.string().optional(),
+  house_power: z.string().optional(),
 });
 
 const Options = z.object({
@@ -20,10 +33,22 @@ const Options = z.object({
   paperless_token: z.string().default(""),
   payment_mode: z.enum(["dryrun", "fints"]).default("dryrun"),
   mailboxes: z.array(Mailbox).default([]),
+  icloud_user: z.string().default(""),
+  icloud_app_password: z.string().default(""),
+  calendars: z.array(Calendar).default([]),
+  ha_entities: z.array(z.string()).default([]),
+  energy: Energy.default({}),
+  github_token: z.string().default(""),
+  api_token: z.string().default(""),
+  daily_brief: z
+    .string()
+    .regex(/^(([01]\d|2[0-3]):[0-5]\d)?$/, "daily_brief im Format HH:MM")
+    .default("07:30"),
   log_level: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
 
 export type MailboxConfig = z.infer<typeof Mailbox>;
+export type CalendarConfig = z.infer<typeof Calendar>;
 export type Config = z.infer<typeof Options> & {
   dataDir: string;
   supervisorToken: string | undefined;

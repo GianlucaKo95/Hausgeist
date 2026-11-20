@@ -1,0 +1,126 @@
+import { DAVClient, type DAVCalendar } from "tsdav";
+import { randomUUID } from "node:crypto";
+import type { Config } from "../core/config.js";
+
+export interface CalendarEvent {
+  calendar: string;
+  title: string;
+  start: string;
+  end: string | null;
+  allDay: boolean;
+  location: string | null;
+}
+
+/** Entfaltet gefaltete iCal-Zeilen und liest die wichtigsten Felder eines VEVENT. */
+export function parseEvents(ical: string, calendar: string): CalendarEvent[] {
+  const lines = ical.replace(/\r?\n[ \t]/g, "").split(/\r?\n/);
+  const events: CalendarEvent[] = [];
+  let cur: Record<string, { value: string; params: string }> | null = null;
+  for (const line of lines) {
+    if (line === "BEGIN:VEVENT") cur = {};
+    else if (line === "END:VEVENT" && cur) {
+      const start = cur.DTSTART;
+      if (start) {
+        events.push({
+          calendar,
+          title: unescape(cur.SUMMARY?.value ?? "(ohne Titel)"),
+          start: icalDate(start.value),
+          end: cur.DTEND ? icalDate(cur.DTEND.value) : null,
+          allDay: start.params.includes("VALUE=DATE") && !start.params.includes("DATE-TIME"),
+          location: cur.LOCATION ? unescape(cur.LOCATION.value) : null,
+        });
+      }
+      cur = null;
+    } else if (cur) {
+      const idx = line.indexOf(":");
+      if (idx < 0) continue;
+      const [name, ...params] = line.slice(0, idx).split(";");
+      cur[name] = { value: line.slice(idx + 1), params: params.join(";") };
+    }
+  }
+  return events;
+}
+
+function unescape(v: string): string {
+  return v.replace(/\\n/gi, "\n").replace(/\\([,;\\])/g, "$1");
+}
+
+function escape(v: string): string {
+  return v.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/([,;])/g, "\\$1");
+}
+
+/** 20261124T183000Z / 20261124T183000 / 20261124 → ISO-ähnlicher String. */
+export function icalDate(v: string): string {
+  const m = v.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/);
+  if (!m) return v;
+  const [, y, mo, d, h, mi, s, z] = m;
+  return h ? `${y}-${mo}-${d}T${h}:${mi}:${s}${z ? "Z" : ""}` : `${y}-${mo}-${d}`;
+}
+
+function toIcal(iso: string): string {
+  return new Date(iso).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+}
+
+export class AppleCalendar {
+  private client: DAVClient | null = null;
+  private calendars: DAVCalendar[] = [];
+
+  constructor(private readonly config: Config) {}
+
+  get enabled(): boolean {
+    return Boolean(this.config.icloud_user && this.config.icloud_app_password);
+  }
+
+  private async connect(): Promise<DAVClient> {
+    if (this.client) return this.client;
+    const client = new DAVClient({
+      serverUrl: "https://caldav.icloud.com",
+      credentials: { username: this.config.icloud_user, password: this.config.icloud_app_password },
+      authMethod: "Basic",
+      defaultAccountType: "caldav",
+    });
+    await client.login();
+    this.calendars = await client.fetchCalendars();
+    this.client = client;
+    return client;
+  }
+
+  async listCalendars(): Promise<string[]> {
+    await this.connect();
+    return this.calendars.map((c) => String(c.displayName ?? c.url));
+  }
+
+  private find(name: string): DAVCalendar {
+    const cal = this.calendars.find((c) => String(c.displayName ?? "").toLowerCase() === name.toLowerCase());
+    if (!cal) throw new Error(`Kalender "${name}" nicht gefunden`);
+    return cal;
+  }
+
+  async events(fromIso: string, toIso: string, names?: string[]): Promise<CalendarEvent[]> {
+    const client = await this.connect();
+    const selected = names?.length ? names.map((n) => this.find(n)) : this.calendars;
+    const all: CalendarEvent[] = [];
+    for (const cal of selected) {
+      const objs = await client.fetchCalendarObjects({ calendar: cal, timeRange: { start: fromIso, end: toIso } });
+      for (const o of objs) if (o.data) all.push(...parseEvents(String(o.data), String(cal.displayName ?? "")));
+    }
+    return all.sort((a, b) => a.start.localeCompare(b.start));
+  }
+
+  async createEvent(calendarName: string, ev: { title: string; start: string; end: string; location?: string | null; notes?: string | null }) {
+    const client = await this.connect();
+    const cal = this.find(calendarName);
+    const uid = randomUUID();
+    const ical = [
+      "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//KoeVen//Hausgeist//DE", "BEGIN:VEVENT",
+      `UID:${uid}`, `DTSTAMP:${toIcal(new Date().toISOString())}`,
+      `DTSTART:${toIcal(ev.start)}`, `DTEND:${toIcal(ev.end)}`, `SUMMARY:${escape(ev.title)}`,
+      ...(ev.location ? [`LOCATION:${escape(ev.location)}`] : []),
+      ...(ev.notes ? [`DESCRIPTION:${escape(ev.notes)}`] : []),
+      "END:VEVENT", "END:VCALENDAR",
+    ].join("\r\n");
+    const res = await client.createCalendarObject({ calendar: cal, iCalString: ical, filename: `${uid}.ics` });
+    if (!res.ok) throw new Error(`Termin anlegen fehlgeschlagen: ${res.status}`);
+    return uid;
+  }
+}

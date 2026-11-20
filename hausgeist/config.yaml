@@ -1,12 +1,20 @@
 name: Hausgeist
-version: "0.1.0"
+version: "0.2.0"
 slug: hausgeist
-description: Persönliches Agenten-Netzwerk – Rechnungen erkennen, freigeben, zahlen und ablegen
+description: Persönliches Agenten-Netzwerk mit Master-Agent und acht Fachagenten
 url: https://github.com/GianlucaKo95/hausgeist
 arch:
   - aarch64
   - amd64
 init: false
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:ghost
+panel_title: Hausgeist
+ports:
+  8099/tcp: null
+ports_description:
+  8099/tcp: API für die eigene App (optional)
 startup: application
 boot: auto
 homeassistant_api: true
@@ -20,6 +28,14 @@ options:
   paperless_token: ""
   payment_mode: dryrun
   mailboxes: []
+  icloud_user: ""
+  icloud_app_password: ""
+  calendars: []
+  ha_entities: []
+  energy: {}
+  github_token: ""
+  api_token: ""
+  daily_brief: "07:30"
   log_level: info
 schema:
   anthropic_api_key: password
@@ -37,4 +53,23 @@ schema:
       user: str
       password: password
       folder: str?
+      smtp_host: str?
+      smtp_port: port?
+      from_name: str?
+  icloud_user: str
+  icloud_app_password: password
+  calendars:
+    - name: str
+      owner: str
+  ha_entities:
+    - str
+  energy:
+    pv_power: str?
+    battery_soc: str?
+    battery_power: str?
+    grid_power: str?
+    house_power: str?
+  github_token: password
+  api_token: password
+  daily_brief: str?
   log_level: list(debug|info|warn|error)

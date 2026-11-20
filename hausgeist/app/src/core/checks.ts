@@ -92,6 +92,50 @@ export function duplicateKey(inv: {
   return `amt:${normalizeIban(inv.iban)}:${inv.amount_cents}:${inv.invoice_date ?? "?"}`;
 }
 
+export type ActionKind = "send_mail" | "order" | "ha_service" | "calendar_event";
+
+/**
+ * Freigaberechte für Stufe-2-Aktionen außer Zahlungen.
+ * - Kinder nie.
+ * - Bestellungen: Erwachsene bis zu ihrem Limit, darüber nur Admin.
+ * - Mail senden: nur der Besitzer des Postfachs oder der Admin.
+ * - Alles andere: Erwachsene und Admin.
+ */
+export function canApproveAction(
+  user: AppUser,
+  action: { kind: ActionKind; amount_cents: number | null; mailbox_owner_id?: string | null },
+): ApprovalDecision {
+  if (user.role === "child") return { allowed: false, reason: "Kinder können keine Aktionen freigeben." };
+  if (action.kind === "order" && user.role === "adult" && (action.amount_cents ?? 0) > user.approval_limit_cents)
+    return { allowed: false, reason: `Bestellung über deinem Limit von ${formatEuro(user.approval_limit_cents)} – nur der Admin kann freigeben.` };
+  if (action.kind === "send_mail" && user.role !== "admin" && action.mailbox_owner_id && action.mailbox_owner_id !== user.id)
+    return { allowed: false, reason: "Nur der Besitzer des Postfachs oder der Admin kann diese Mail freigeben." };
+  return { allowed: true };
+}
+
+/** Home-Assistant-Domains, deren Dienste immer eine Freigabe brauchen. */
+export const SENSITIVE_HA_DOMAINS = ["lock", "alarm_control_panel", "cover", "siren", "valve"];
+
+export function isSensitiveHaService(domain: string): boolean {
+  return SENSITIVE_HA_DOMAINS.includes(domain);
+}
+
+/** Entity-Whitelist mit einfachen Platzhaltern, z. B. "climate.*" oder "sensor.pv_*". */
+export function entityAllowed(entityId: string, patterns: string[]): boolean {
+  return patterns.some((p) => {
+    const re = new RegExp("^" + p.split("*").map((s) => s.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*") + "$");
+    return re.test(entityId);
+  });
+}
+
+/** Spätester Kündigungstermin: Vertragsende minus Kündigungsfrist. */
+export function noticeDeadline(endDate: string | null, noticeDays: number | null): string | null {
+  if (!endDate || noticeDays == null) return null;
+  const d = new Date(`${endDate}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - noticeDays);
+  return d.toISOString().slice(0, 10);
+}
+
 export interface AccountRule {
   id: string;
   label: string;
