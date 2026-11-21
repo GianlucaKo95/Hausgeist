@@ -21,11 +21,16 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: de.koeven.hausgeist
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
     info:
       path: Hausgeist/Info.plist
       properties:
         CFBundleDisplayName: Hausgeist
         UILaunchScreen: {}
+        ITSAppUsesNonExemptEncryption: false   # nur HTTPS/Standardverschlüsselung → keine Exportabfrage in TestFlight
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         # Die App spricht den Pi über das VPN per HTTP an (Tailscale/WireGuard
         # verschlüsselt die Verbindung). Nur lokale/VPN-Adressen sind erlaubt.
         NSAppTransportSecurity:

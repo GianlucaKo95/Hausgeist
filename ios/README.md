@@ -24,3 +24,22 @@ In Xcode unter *Signing & Capabilities* dein Team auswählen und auf dem iPhone 
 5. **In der App:** *Einstellungen → Server* auf `http://<pi-name>.<tailnet>.ts.net:8099` setzen und *Speichern und testen* tippen.
 
 HTTP ist nur für `*.ts.net` und lokale Adressen erlaubt. Die Verbindung läuft durch den WireGuard-Tunnel von Tailscale und ist damit verschlüsselt.
+
+## TestFlight über GitHub Actions
+
+Der Workflow **TestFlight** baut die App auf einem macOS-Runner, signiert sie über die Cloud-Signierung von Apple und lädt sie direkt zu TestFlight hoch. Gestartet wird er manuell (*Actions → TestFlight → Run workflow*) oder durch ein Tag wie `v0.3.0`. Die Build-Nummer ist die Laufnummer des Workflows.
+
+**Einmalig in App Store Connect:**
+1. Unter *Apps → +* eine neue App anlegen: Plattform iOS, Bundle-ID `de.koeven.hausgeist`. Ist die Bundle-ID noch nicht registriert, vorher unter *developer.apple.com → Identifiers* anlegen.
+2. Unter *Benutzer und Zugriff → Integrationen → App Store Connect API* einen **Team-Schlüssel mit der Rolle Admin** erzeugen. Die Cloud-Signierung braucht Admin-Rechte. Die `.p8`-Datei lässt sich nur einmal herunterladen.
+
+**GitHub-Secrets** (*Repo → Settings → Secrets and variables → Actions*):
+
+| Secret | Inhalt |
+| --- | --- |
+| `APP_STORE_CONNECT_KEY_ID` | Schlüssel-ID, z. B. `ABC123DEF4` |
+| `APP_STORE_CONNECT_ISSUER_ID` | Issuer-ID (UUID oben auf der API-Seite) |
+| `APP_STORE_CONNECT_KEY_P8` | kompletter Inhalt der `.p8`-Datei inkl. `-----BEGIN PRIVATE KEY-----` |
+| `APPLE_TEAM_ID` | Team-ID aus *developer.apple.com → Membership* |
+
+Danach in TestFlight Annika als interne Testerin hinzufügen.
