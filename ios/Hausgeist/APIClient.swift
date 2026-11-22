@@ -64,9 +64,13 @@ struct APIClient {
         return URLSession(configuration: cfg)
     }()
 
-    func me() async throws -> Me { try await request("api/me") }
+    func me() async throws -> Me {
+        if AppConfig.isDemo { return Me(id: "demo", name: "Gianluca", role: "admin") }
+        return try await request("api/me")
+    }
 
     func chat(_ message: String) async throws -> String {
+        if AppConfig.isDemo { return DemoData.reply }
         struct R: Decodable { let reply: String }
         let r: R = try await request("api/chat", method: "POST", body: ["message": message])
         return r.reply
@@ -77,7 +81,10 @@ struct APIClient {
         let _: R = try await request("api/reset", method: "POST", body: [String: String]())
     }
 
-    func approvals() async throws -> ApprovalList { try await request("api/approvals") }
+    func approvals() async throws -> ApprovalList {
+        if AppConfig.isDemo { return DemoData.approvals }
+        return try await request("api/approvals")
+    }
 
     func decide(payment id: String, approve: Bool) async throws -> DecisionResult {
         try await request("api/approvals/payment/\(id)", method: "POST", body: ["approve": approve])

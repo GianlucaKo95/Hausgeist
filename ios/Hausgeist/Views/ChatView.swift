@@ -11,7 +11,7 @@ struct ChatView: View {
     @Environment(AuthService.self) private var auth
     let me: Me?
 
-    @State private var messages: [ChatMessage] = []
+    @State private var messages: [ChatMessage] = AppConfig.isDemo ? DemoData.chat : []
     @State private var input = ""
     @State private var busy = false
     @FocusState private var focused: Bool

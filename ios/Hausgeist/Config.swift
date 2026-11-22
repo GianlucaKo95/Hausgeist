@@ -3,6 +3,16 @@ import Foundation
 /// Öffentliche Projektdaten. Der Publishable Key darf in der App stehen –
 /// er erlaubt nur das Anmelden, keine Datenzugriffe (dafür gilt RLS).
 enum AppConfig {
+    /// Startargument -uiDemo: App mit Beispieldaten ohne Login und Server (für Screenshots).
+    static let isDemo = ProcessInfo.processInfo.arguments.contains("-uiDemo")
+
+    /// Startargument -tab <chat|approvals|settings>
+    static var initialTab: String {
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-tab"), i + 1 < args.count { return args[i + 1] }
+        return "chat"
+    }
+
     static let supabaseURL = URL(string: "https://gyjeldwxsicauzxfsisc.supabase.co")!
     static let supabasePublishableKey = "sb_publishable_SWkeGI32jOnu9r8rFXRBcw_USIhXWkA"
 

@@ -1,0 +1,65 @@
+name: Screenshots
+
+# Startet die App im Demo-Modus im Simulator und speichert Bildschirmfotos als Artefakt.
+on:
+  workflow_dispatch:
+  push:
+    paths: ["ios/**", ".github/workflows/screenshots.yml"]
+
+jobs:
+  screenshots:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode auswählen
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+
+      - name: Projekt erzeugen und bauen
+        working-directory: ios
+        run: |
+          brew install xcodegen
+          xcodegen
+          set -o pipefail
+          xcodebuild build \
+            -project Hausgeist.xcodeproj -scheme Hausgeist \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO | tail -3
+
+      - name: Simulator starten
+        run: |
+          UDID=$(xcrun simctl list devices available -j \
+            | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; \
+              devs=[x for k,v in d.items() if 'iOS' in k for x in v if x['name'].startswith('iPhone') and 'Pro' in x['name'] and 'Max' not in x['name']]; \
+              print(devs[-1]['udid'])")
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl status_bar "$UDID" override --time "9:41" --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3
+          xcrun simctl install "$UDID" ios/build/Build/Products/Debug-iphonesimulator/Hausgeist.app
+
+      - name: Bildschirmfotos
+        run: |
+          mkdir -p shots
+          shoot () {  # $1 = Name, Rest = Startargumente
+            name=$1; shift
+            xcrun simctl terminate "$UDID" de.koeven.hausgeist 2>/dev/null || true
+            xcrun simctl launch "$UDID" de.koeven.hausgeist "$@"
+            sleep 6
+            xcrun simctl io "$UDID" screenshot "shots/$name.png"
+          }
+          shoot 1-login
+          shoot 2-chat -uiDemo -tab chat
+          shoot 3-freigaben -uiDemo -tab approvals
+          shoot 4-einstellungen -uiDemo -tab settings
+          xcrun simctl ui "$UDID" appearance dark
+          shoot 5-chat-dunkel -uiDemo -tab chat
+          shoot 6-freigaben-dunkel -uiDemo -tab approvals
+          ls -la shots
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hausgeist-screenshots
+          path: shots/*.png

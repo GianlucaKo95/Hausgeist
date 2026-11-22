@@ -31,6 +31,10 @@ final class AuthService {
     var isSignedIn: Bool { session != nil }
 
     init() {
+        if AppConfig.isDemo {
+            session = AuthSession(accessToken: "demo", refreshToken: "demo", expiresAt: .distantFuture, email: "demo@koeven.de")
+            return
+        }
         if let data = Keychain.load(keychainKey),
            let s = try? JSONDecoder().decode(AuthSession.self, from: data) {
             session = s
