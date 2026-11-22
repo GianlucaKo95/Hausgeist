@@ -2,7 +2,9 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { Config } from "./config.js";
 import { canApprove, type AppUser } from "./checks.js";
 import { db, listUsers } from "./db.js";
-import type { MasterAgent } from "../agents/master.js";
+import type { MasterAgent, ChatAttachment } from "../agents/master.js";
+import { saveUpload } from "./uploads.js";
+import { isSupportedMime } from "../agents/extract.js";
 import type { FinanceAgent } from "../agents/finance.js";
 import type { ActionService } from "./actions.js";
 import { logger } from "./log.js";
@@ -15,12 +17,12 @@ function json(res: ServerResponse, status: number, body: unknown) {
   res.end(JSON.stringify(body));
 }
 
-async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+async function readBody(req: IncomingMessage, limit = 64_000): Promise<Record<string, unknown>> {
   let size = 0;
   const chunks: Buffer[] = [];
   for await (const c of req) {
     size += (c as Buffer).length;
-    if (size > 64_000) throw new Error("Anfrage zu groß");
+    if (size > limit) throw new Error("Anfrage zu groß");
     chunks.push(c as Buffer);
   }
   return chunks.length ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : {};
@@ -86,7 +88,7 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
         res.end(CHAT_PAGE);
         return;
       }
-      if (path.endsWith("/api/health")) return json(res, 200, { ok: true, version: "0.3.0" });
+      if (path.endsWith("/api/health")) return json(res, 200, { ok: true, version: "0.4.0" });
 
       const user = await resolveUser(req);
       if (!user) return json(res, 401, { error: "Nicht angemeldet oder nicht als Haushaltsmitglied eingetragen." });
@@ -99,10 +101,23 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
       }
 
       if (req.method === "POST" && path.endsWith("/api/chat")) {
-        const body = await readBody(req);
+        // Bis zu 5 Anhänge (Fotos, Scans, PDFs) à 10 MB, base64-kodiert.
+        const body = await readBody(req, 75_000_000);
         const message = String(body.message ?? "").trim();
-        if (!message) return json(res, 400, { error: "message fehlt" });
-        const reply = await master.chat(user, message.slice(0, 8000));
+        const raw = Array.isArray(body.attachments) ? (body.attachments as { name?: string; mime?: string; data?: string }[]) : [];
+        if (raw.length > 5) return json(res, 400, { error: "Höchstens 5 Anhänge" });
+        const attachments: ChatAttachment[] = [];
+        for (const a of raw) {
+          const mime = String(a.mime ?? "");
+          if (!isSupportedMime(mime)) return json(res, 400, { error: `Dateityp ${mime} wird nicht unterstützt (PDF, JPEG, PNG)` });
+          const data = Buffer.from(String(a.data ?? ""), "base64");
+          if (data.length === 0 || data.length > 10_000_000) return json(res, 400, { error: "Datei leer oder größer als 10 MB" });
+          const name = String(a.name ?? "datei").replace(/[^\w.\- äöüÄÖÜß]+/g, "_").slice(0, 100);
+          const up = saveUpload(data, name, mime, user.id);
+          attachments.push({ uploadId: up.id, name, mime, data });
+        }
+        if (!message && attachments.length === 0) return json(res, 400, { error: "message fehlt" });
+        const reply = await master.chat(user, message.slice(0, 8000), attachments);
         return json(res, 200, { reply });
       }
 

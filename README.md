@@ -4,22 +4,25 @@ Persönliches Agenten-Netzwerk als Home-Assistant-Add-on: ein **Master-Agent** n
 
 ## Was läuft
 
-**Ereignisgesteuert (ohne Chat)**
-- **Rechnungsablauf:** IMAP-Postfächer werden überwacht. Rechnungen werden mit Claude ausgelesen und von festem Code geprüft (IBAN-Prüfsumme, bekannter Empfänger, Doppelrechnung, Limit). Es folgt eine Push-Nachricht mit **Freigeben / Ablehnen**, dann zahlt der Ausführer, anschließend wird das PDF in Paperless abgelegt. Bis die FinTS-Registrierung da ist: **Testmodus**, es fließt kein Geld.
-- **Tägliches Briefing** (Standard 07:30): Kündigungsfristen 30/14/7/1 Tag vorher, fällige Haushaltsaufgaben, offene Freigaben.
+**Ereignisgesteuert und zeitgesteuert (ohne Chat)**
+- **Posteingang:** PDFs aus Mails und Fotos/Scans/PDFs aus der App werden eingeordnet. Bei einer **Rechnung** wird die Zahlung geprüft und zur Freigabe vorgelegt. Ein **Vertrag** wird erfasst, die Kündigungsfrist eingetragen und gemeldet. Ein **Termin** wird zur Übernahme in den Kalender vorgeschlagen. Alles andere geht nach Paperless. Kalendereinladungen (.ics) werden ebenfalls vorgeschlagen.
+- **Zahlungen:** Ausgeführt wird erst nach Freigabe. Bis die FinTS-Registrierung da ist, läuft alles im **Testmodus**, es fließt kein Geld.
+- **Routinen:** Erinnerungen zu Zeitpunkten (auch wiederkehrend) und geplante Geräteschaltungen. Gerätealarme mit Wenn-dann-Regeln werden jede Minute geprüft. Morgens gibt es das Tagesbriefing (Fristen, Aufgaben, offene Freigaben) und einen Mail-Überblick, wiederkehrende Einkäufe kommen automatisch auf die Liste. Preisalarme werden täglich geprüft, montags kommen Prospekt-Angebote. Offene Freigaben werden nach 24 Stunden erneut gemeldet und verfallen nach 7 Tagen.
 
 **Auf Anfrage (Chat in der HA-Seitenleiste oder über die API)**
 
 | Agent | Kann | Stufe 2 (nur nach Freigabe) |
 | --- | --- | --- |
-| Finance | Rechnungen, Ausgaben nach Kategorie, Budgets, offene Freigaben | Zahlung nur über den Rechnungsablauf |
-| Document | Paperless durchsuchen und lesen, Verträge erfassen, Kündigungsfristen automatisch eintragen | – |
-| Shopping | Einkaufsliste, wiederkehrende Einkäufe, Preisvergleich per Websuche | Bestellung (Warenkorb mit Links) |
+| Finance | Rechnungen, Ausgaben nach Kategorie, Budgets, offene Freigaben, Konten/Empfänger (Admin) | Überweisung (aus Rechnung, Foto oder „Überweise 50 € an …“) |
+| Document | Paperless durchsuchen und lesen, Verträge erfassen (auch aus Beschreibung), Fristen, Uploads einordnen und ablegen | – |
+| Shopping | Listen pro Laden und Abteilung, wiederkehrende Artikel, Preisvergleich, Preisalarme, Wunschlisten (mit Reservierung), Prospekt-Angebote | Bestellung (Warenkorb mit Links) |
 | Communication | Private/gemeinsame Postfächer lesen, sortieren, markieren, Antworten entwerfen | Mail senden |
-| Household | HA-Geräte (Whitelist), Energie mit PV/Speicher, Verlauf, Haushaltsaufgaben und Wartungen | Schlösser, Alarm, Rollläden/Tore, Sirenen, Ventile |
-| Personal & Family | Apple-Kalender lesen, Termine im eigenen/gemeinsamen Kalender, Familienaufgaben, Erinnerungen | Termin im Kalender einer anderen Person |
+| Household | HA-Geräte und Räume (Whitelist), zeitgesteuertes Schalten, Gerätealarme und Wenn-dann-Regeln, Energie mit PV/Speicher, Haushaltsaufgaben und Wartungen | Schlösser, Alarm, Rollläden/Tore, Sirenen, Ventile |
+| Personal & Family | Apple-Kalender, Termine im eigenen/gemeinsamen Kalender, Familienaufgaben, Erinnerungen zu Zeitpunkten | Termin im Kalender einer anderen Person |
 | Business | Geschäftspostfach (scope `business`), GitHub-Repos und Issues | Mail senden |
 | Research | Websuche, Quellen prüfen, Entscheidungsvorlagen ablegen | – |
+
+Der Master-Agent selbst verwaltet außerdem **Notizen** (Haushaltswissen wie „Wo ist der Haupthahn?“) und Präferenzen.
 
 Freigaberegeln: Kinder geben nichts frei und sehen nur Family, Einkaufsliste und Recherche. Erwachsene geben bis zu ihrem Limit frei (Standard 500 €). Darüber und bei neuer oder geänderter Empfänger-IBAN entscheidet nur der Admin. Mails darf nur der Besitzer des Postfachs oder der Admin freigeben.
 
@@ -66,6 +69,8 @@ energy:
   house_power: sensor.hausverbrauch
 github_token: <fine-grained Token, Issues lesen/schreiben>
 daily_brief: "07:30"
+mail_triage: true             # Mail-Überblick morgens
+weekly_offers: true           # Prospekt-Angebote montags
 log_level: info
 ```
 

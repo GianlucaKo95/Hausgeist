@@ -1,15 +1,9 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { createHash } from "node:crypto";
-import type { Config } from "../core/config.js";
 import { db, audit, listUsers } from "../core/db.js";
 import {
   approversFor, canApprove, duplicateKey, formatEuro, formatIban, isValidIban, normalizeIban,
   payeeStatus, suggestAccount, type AccountRule, type AppUser, type PayeeStatus,
 } from "../core/checks.js";
 import { HomeAssistant } from "../adapters/homeassistant.js";
-import { extractInvoice, type InvoiceData } from "./extract.js";
-import type { IncomingMail } from "./communication.js";
-import type { DocumentAgent } from "./document.js";
 import type { Executor } from "./executor.js";
 import { logger } from "../core/log.js";
 
@@ -24,92 +18,77 @@ const statusLabel: Record<PayeeStatus, string> = {
   iban_changed: "🚨 IBAN GEÄNDERT",
 };
 
+/** Eine Zahlung, die freigegeben werden soll – aus einer Rechnung oder direkt aus dem Chat. */
+export interface PaymentInput {
+  source: string;               // Postfach, "app" oder "chat"
+  messageId?: string | null;
+  sha: string;                  // Hash des Dokuments oder "manual:<uuid>"
+  issuer: string;
+  iban: string | null;
+  bic?: string | null;
+  amount_cents: number;
+  currency?: string;
+  reference?: string | null;
+  invoice_number?: string | null;
+  invoice_date?: string | null;
+  due_date?: string | null;
+  recipient_name?: string | null;
+  category?: string | null;
+  suspicious?: string | null;
+  accountLabel?: string | null; // Wunschkonto (Chat)
+  requestedBy?: AppUser | null;
+}
+
 /**
- * Finance-Agent, Phase 1: liest Rechnungen aus, prüft sie und holt die
- * Freigabe ein. Die Zahlung selbst führt der Executor mit den eingefrorenen
- * Freigabewerten aus.
+ * Finance-Agent: prüft Zahlungen und holt die Freigabe ein. Die Zahlung
+ * selbst führt der Executor mit den eingefrorenen Freigabewerten aus.
  */
 export class FinanceAgent {
-  private readonly llm: Anthropic;
-
   constructor(
-    private readonly config: Config,
     private readonly ha: HomeAssistant,
-    private readonly documents: DocumentAgent,
     private readonly executor: Executor,
-  ) {
-    this.llm = new Anthropic({ apiKey: config.anthropic_api_key });
-  }
+  ) {}
 
-  async handleMail(mail: IncomingMail): Promise<void> {
-    for (const pdf of mail.pdfs) {
-      const sha = createHash("sha256").update(pdf.content).digest("hex");
-      const { data: seen } = await db().from("invoices").select("id").eq("source_sha256", sha).maybeSingle();
-      if (seen) {
-        log.debug(`${pdf.filename} bereits verarbeitet`);
-        continue;
-      }
-      try {
-        await this.handlePdf(mail, pdf.filename, pdf.content, sha);
-      } catch (e) {
-        log.error(`${pdf.filename} aus ${mail.mailbox} fehlgeschlagen`, e);
-        await audit({ agent: "finance", action: "read_invoice", level: 0, result: "error", detail: { file: pdf.filename, error: String(e) } });
-      }
-    }
-  }
-
-  private async handlePdf(mail: IncomingMail, filename: string, pdf: Buffer, sha: string): Promise<void> {
-    const data = await extractInvoice(this.llm, this.config.model, pdf, mail);
-    this.documents.keep(sha, pdf);
-    await audit({ agent: "finance", action: "read_invoice", level: 0, result: "ok", detail: { file: filename, issuer: data.issuer, is_invoice: data.is_invoice } });
-
-    // Keine Rechnung oder nichts zu überweisen: nur ablegen.
-    if (!data.is_invoice || !data.needs_payment) {
-      await this.documents.file(sha, {
-        filename,
-        title: [data.issuer, data.invoice_number].filter(Boolean).join(" ") || mail.subject || filename,
-        tags: data.is_invoice ? ["Rechnung", "keine Überweisung", data.category ?? ""] : ["Posteingang"],
-        created: data.invoice_date,
-      });
-      return;
-    }
-
+  /** Prüft eine Zahlung und legt sie zur Freigabe vor. Gibt eine kurze Statusmeldung zurück. */
+  async createPaymentRequest(input: PaymentInput): Promise<{ status: "pending" | "needs_review"; message: string; invoiceId: string }> {
     const warnings: string[] = [];
-    if (data.suspicious) warnings.push(`Auffällig: ${data.suspicious}`);
-    if (data.currency.toUpperCase() !== "EUR") warnings.push(`Währung ${data.currency}`);
-
-    const iban = data.iban ? normalizeIban(data.iban) : "";
+    if (input.suspicious) warnings.push(`Auffällig: ${input.suspicious}`);
+    const currency = (input.currency ?? "EUR").toUpperCase();
+    const iban = input.iban ? normalizeIban(input.iban) : "";
     const users = await listUsers();
     const admins = users.filter((u) => u.role === "admin");
 
-    if (!iban || !isValidIban(iban) || data.amount_cents <= 0 || data.currency.toUpperCase() !== "EUR") {
-      await this.needsReview(mail, data, sha, iban || "UNBEKANNT", "IBAN fehlt/ungültig, Betrag 0 oder keine Euro-Rechnung", admins);
-      return;
+    if (!iban || !isValidIban(iban) || input.amount_cents <= 0 || currency !== "EUR") {
+      const id = await this.needsReview(input, iban || "UNBEKANNT", "IBAN fehlt/ungültig, Betrag 0 oder keine Euro-Zahlung", admins);
+      return { status: "needs_review", message: "Zur Prüfung beim Admin: IBAN fehlt oder ist ungültig, Betrag 0 oder keine Euro-Zahlung.", invoiceId: id };
     }
 
-    const { data: payee } = await db().from("payees").select("id, ibans, default_account_id").ilike("name", data.issuer).maybeSingle();
+    const { data: payee } = await db().from("payees").select("id, ibans, default_account_id").ilike("name", input.issuer).maybeSingle();
     const pStatus = payeeStatus(iban, payee?.ibans ?? [], Boolean(payee));
-    const dupKey = duplicateKey({ ...data, iban });
+    const dupKey = duplicateKey({ issuer: input.issuer, invoice_number: input.invoice_number ?? null, iban, amount_cents: input.amount_cents, invoice_date: input.invoice_date ?? null });
     const { data: dups } = await db().from("invoices").select("id").eq("duplicate_key", dupKey).neq("status", "rejected").limit(1);
     if (dups && dups.length > 0) {
-      await this.needsReview(mail, data, sha, iban, "Mögliche Doppelrechnung", admins, dupKey, pStatus);
-      return;
+      const id = await this.needsReview(input, iban, "Mögliche Doppelrechnung", admins, dupKey, pStatus);
+      return { status: "needs_review", message: "Sieht nach einer Doppelrechnung aus – zur Prüfung beim Admin.", invoiceId: id };
     }
 
     const { data: accounts } = await db().from("accounts").select("id, label, match_names, is_default");
-    const account = suggestAccount((accounts ?? []) as AccountRule[], data.recipient_name, payee?.default_account_id ?? null);
-    if (!account) warnings.push("Kein Zahlerkonto gefunden – bitte Konten in Supabase anlegen");
+    const all = (accounts ?? []) as AccountRule[];
+    const wanted = input.accountLabel ? all.find((a) => a.label.toLowerCase().includes(input.accountLabel!.toLowerCase())) : null;
+    const account = wanted ?? suggestAccount(all, input.recipient_name ?? null, payee?.default_account_id ?? null);
+    if (!account) warnings.push("Kein Zahlerkonto gefunden – bitte Konten anlegen");
+    if (input.requestedBy) warnings.push(`Angefragt von ${input.requestedBy.name}`);
 
+    const reference = input.reference ?? input.invoice_number ?? null;
     const { data: invoice, error } = await db()
       .from("invoices")
       .insert({
-        mailbox: mail.mailbox, message_id: mail.messageId, source_sha256: sha, duplicate_key: dupKey,
-        issuer: data.issuer, recipient_name: data.recipient_name, invoice_number: data.invoice_number,
-        invoice_date: data.invoice_date, due_date: data.due_date, amount_cents: data.amount_cents,
-        currency: "EUR", iban, bic: data.bic, reference: data.reference ?? data.invoice_number,
-        category: data.category, payee_id: payee?.id ?? null, payee_status: pStatus,
-        suggested_account_id: account?.id ?? null, status: "pending_approval",
-        review_note: warnings.join(" | ") || null,
+        mailbox: input.source, message_id: input.messageId ?? null, source_sha256: input.sha, duplicate_key: dupKey,
+        issuer: input.issuer, recipient_name: input.recipient_name ?? null, invoice_number: input.invoice_number ?? null,
+        invoice_date: input.invoice_date ?? null, due_date: input.due_date ?? null, amount_cents: input.amount_cents,
+        currency: "EUR", iban, bic: input.bic ?? null, reference, category: input.category ?? null,
+        payee_id: payee?.id ?? null, payee_status: pStatus, suggested_account_id: account?.id ?? null,
+        status: "pending_approval", review_note: warnings.join(" | ") || null,
       })
       .select("id")
       .single();
@@ -117,54 +96,53 @@ export class FinanceAgent {
 
     const { data: approval, error: aErr } = await db()
       .from("approvals")
-      .insert({
-        invoice_id: invoice.id, amount_cents: data.amount_cents, iban,
-        reference: data.reference ?? data.invoice_number, account_id: account?.id ?? null, payee_status: pStatus,
-      })
+      .insert({ invoice_id: invoice.id, amount_cents: input.amount_cents, iban, reference, account_id: account?.id ?? null, payee_status: pStatus })
       .select("id")
       .single();
     if (aErr) throw aErr;
 
-    const req = { amount_cents: data.amount_cents, payee_status: pStatus };
-    const recipients = approversFor(users, req);
+    const recipients = approversFor(users, { amount_cents: input.amount_cents, payee_status: pStatus });
     const lines = [
-      `${formatEuro(data.amount_cents)}${data.due_date ? `, fällig ${data.due_date.split("-").reverse().join(".")}` : ""}`,
+      `${formatEuro(input.amount_cents)}${input.due_date ? `, fällig ${input.due_date.split("-").reverse().join(".")}` : ""}`,
       `${formatIban(iban)} – ${statusLabel[pStatus]}`,
       `Von Konto: ${account?.label ?? "—"}`,
-      data.recipient_name ? `Rechnung an: ${data.recipient_name}` : "",
-      data.reference ? `Zweck: ${data.reference}` : "",
+      input.recipient_name ? `Rechnung an: ${input.recipient_name}` : "",
+      reference ? `Zweck: ${reference}` : "",
       ...warnings.map((w) => `⚠️ ${w}`),
     ].filter(Boolean);
 
     for (const u of recipients) {
-      await this.ha.notify(u.notify_service!, `Rechnung: ${data.issuer}`, lines.join("\n"), [
+      await this.ha.notify(u.notify_service!, `Zahlung: ${input.issuer}`, lines.join("\n"), [
         { action: `${ACTION_APPROVE}${approval.id}`, title: "Freigeben" },
         { action: `${ACTION_REJECT}${approval.id}`, title: "Ablehnen", destructive: true },
       ], `hg-${approval.id}`);
     }
-    if (recipients.length === 0) log.warn("Niemand darf diese Rechnung freigeben – Nutzer und notify_service prüfen");
-    await audit({ agent: "finance", action: "request_approval", level: 2, result: "pending", ref_table: "invoices", ref_id: invoice.id, detail: { approvers: recipients.map((u) => u.name), payee_status: pStatus } });
-    log.info(`Freigabe angefragt: ${data.issuer} ${formatEuro(data.amount_cents)}`);
+    if (recipients.length === 0) log.warn("Niemand darf diese Zahlung freigeben – Nutzer und notify_service prüfen");
+    await audit({ agent: "finance", action: "request_approval", level: 2, result: "pending", user_id: input.requestedBy?.id, ref_table: "invoices", ref_id: invoice.id, detail: { approvers: recipients.map((u) => u.name), payee_status: pStatus, source: input.source } });
+    log.info(`Freigabe angefragt: ${input.issuer} ${formatEuro(input.amount_cents)}`);
+    return {
+      status: "pending",
+      message: `Freigabe angefragt bei ${recipients.map((u) => u.name).join(", ") || "niemandem (Benachrichtigungen fehlen)"}: ${formatEuro(input.amount_cents)} an ${input.issuer}, ${statusLabel[pStatus]}, Konto ${account?.label ?? "—"}.`,
+      invoiceId: invoice.id,
+    };
   }
 
-  private async needsReview(
-    mail: IncomingMail, data: InvoiceData, sha: string, iban: string, reason: string, admins: AppUser[],
-    dupKey?: string, pStatus: PayeeStatus = "new",
-  ): Promise<void> {
+  private async needsReview(input: PaymentInput, iban: string, reason: string, admins: AppUser[], dupKey?: string, pStatus: PayeeStatus = "new"): Promise<string> {
     const { data: inv, error } = await db().from("invoices").insert({
-      mailbox: mail.mailbox, message_id: mail.messageId, source_sha256: sha,
-      duplicate_key: dupKey ?? duplicateKey({ ...data, iban }), issuer: data.issuer || "Unbekannt",
-      recipient_name: data.recipient_name, invoice_number: data.invoice_number, invoice_date: data.invoice_date,
-      due_date: data.due_date, amount_cents: Math.max(data.amount_cents, 1), currency: data.currency || "EUR",
-      iban, bic: data.bic, reference: data.reference, category: data.category, payee_status: pStatus,
-      status: "needs_review", review_note: reason,
+      mailbox: input.source, message_id: input.messageId ?? null, source_sha256: input.sha,
+      duplicate_key: dupKey ?? duplicateKey({ issuer: input.issuer, invoice_number: input.invoice_number ?? null, iban, amount_cents: input.amount_cents, invoice_date: input.invoice_date ?? null }),
+      issuer: input.issuer || "Unbekannt", recipient_name: input.recipient_name ?? null, invoice_number: input.invoice_number ?? null,
+      invoice_date: input.invoice_date ?? null, due_date: input.due_date ?? null, amount_cents: Math.max(input.amount_cents, 1),
+      currency: input.currency || "EUR", iban, bic: input.bic ?? null, reference: input.reference ?? null, category: input.category ?? null,
+      payee_status: pStatus, status: "needs_review", review_note: reason,
     }).select("id").single();
     if (error) throw error;
     for (const a of admins.filter((u) => u.notify_service)) {
-      await this.ha.notify(a.notify_service!, `Rechnung prüfen: ${data.issuer}`, `${reason}\n${formatEuro(data.amount_cents)} – keine Zahlung angestoßen.`);
+      await this.ha.notify(a.notify_service!, `Zahlung prüfen: ${input.issuer}`, `${reason}\n${formatEuro(input.amount_cents)} – keine Zahlung angestoßen.`);
     }
     await audit({ agent: "finance", action: "needs_review", level: 1, result: reason, ref_table: "invoices", ref_id: inv.id });
-    log.warn(`Zur Prüfung: ${data.issuer} – ${reason}`);
+    log.warn(`Zur Prüfung: ${input.issuer} – ${reason}`);
+    return inv.id;
   }
 
   /** Klick auf "Freigeben"/"Ablehnen" in der Home-Assistant-App. */

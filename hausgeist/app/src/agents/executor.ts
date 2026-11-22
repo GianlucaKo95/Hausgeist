@@ -82,7 +82,7 @@ export class Executor {
     if (!inv) return;
     try {
       const taskId = await this.documents.file(inv.source_sha256, {
-        filename: `${inv.issuer}-${inv.invoice_number ?? inv.id}.pdf`.replace(/[^\w.-]+/g, "_"),
+        filename: `${inv.issuer}-${inv.invoice_number ?? inv.id}`.replace(/[^\w-]+/g, "_"),
         title: [inv.issuer, inv.invoice_number].filter(Boolean).join(" "),
         tags: ["Rechnung", inv.category ?? "", ...extraTags],
         created: inv.invoice_date,

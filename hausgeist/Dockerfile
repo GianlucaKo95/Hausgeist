@@ -1,7 +1,8 @@
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
-RUN apk add --no-cache nodejs npm libstdc++ libgcc
+RUN apk add --no-cache nodejs npm libstdc++ libgcc tzdata
+ENV TZ=Europe/Berlin
 
 WORKDIR /app
 COPY app/package.json app/package-lock.json ./

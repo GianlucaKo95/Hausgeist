@@ -20,13 +20,15 @@ export interface IncomingMail {
   date: Date | null;
   text: string;
   pdfs: IncomingPdf[];
+  /** Kalendereinladungen (.ics) */
+  invites: IncomingPdf[];
 }
 
 type State = Record<string, { uidValidity: string; lastUid: number }>;
 
 /**
  * Communication-Agent, Phase 1: überwacht IMAP-Postfächer per IDLE und meldet
- * neue Mails mit PDF-Anhang. Er liest nur – Antworten und Senden kommen später
+ * neue Mails mit PDF-Anhang oder Kalendereinladung. Er liest nur – Antworten und Senden kommen später
  * und laufen dann über eine Freigabe (Stufe 2).
  */
 export class CommunicationAgent {
@@ -124,7 +126,10 @@ export class CommunicationAgent {
         const pdfs = parsed.attachments
           .filter((a) => a.contentType === "application/pdf" || a.filename?.toLowerCase().endsWith(".pdf"))
           .map((a) => ({ filename: a.filename ?? "dokument.pdf", content: a.content }));
-        if (pdfs.length > 0) {
+        const invites = parsed.attachments
+          .filter((a) => a.contentType === "text/calendar" || a.filename?.toLowerCase().endsWith(".ics"))
+          .map((a) => ({ filename: a.filename ?? "einladung.ics", content: a.content }));
+        if (pdfs.length > 0 || invites.length > 0) {
           await this.onMail({
             mailbox: mb.name,
             messageId: parsed.messageId ?? null,
@@ -133,6 +138,7 @@ export class CommunicationAgent {
             date: parsed.date ?? null,
             text: (parsed.text ?? "").slice(0, 4000),
             pdfs,
+            invites,
           });
         }
       } catch (e) {

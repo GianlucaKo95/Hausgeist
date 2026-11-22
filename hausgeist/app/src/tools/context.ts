@@ -4,6 +4,8 @@ import type { HomeAssistant } from "../adapters/homeassistant.js";
 import type { AppleCalendar } from "../adapters/calendar.js";
 import type { Paperless } from "../adapters/paperless.js";
 import type { ActionService } from "../core/actions.js";
+import type { FinanceAgent } from "../agents/finance.js";
+import type { IntakeAgent } from "../agents/intake.js";
 import { db } from "../core/db.js";
 
 export interface ToolContext {
@@ -12,6 +14,8 @@ export interface ToolContext {
   calendar: AppleCalendar;
   paperless: Paperless;
   actions: ActionService;
+  finance: FinanceAgent;
+  intake: IntakeAgent;
   /** Die Person, für die der Master-Agent gerade arbeitet. */
   user: AppUser;
 }
@@ -39,6 +43,17 @@ export function safe<A>(fn: (args: A) => Promise<ToolResult>): (args: A) => Prom
 
 export function requireAdult(ctx: ToolContext): void {
   if (ctx.user.role === "child") throw new Error("Dafür fehlt die Berechtigung.");
+}
+
+export function requireAdmin(ctx: ToolContext): void {
+  if (ctx.user.role !== "admin") throw new Error("Das darf nur der Admin.");
+}
+
+/** Person aus dem Haushalt per Name finden (ohne Groß-/Kleinschreibung). */
+export async function findUser(name: string) {
+  const { data } = await db().from("users").select("id, name, role, notify_service").ilike("name", name.trim()).maybeSingle();
+  if (!data) throw new Error(`"${name}" gehört nicht zum Haushalt`);
+  return data as { id: string; name: string; role: string; notify_service: string | null };
 }
 
 /**

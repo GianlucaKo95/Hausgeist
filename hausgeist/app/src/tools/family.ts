@@ -1,7 +1,7 @@
 import { tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { db } from "../core/db.js";
-import { ok, safe, type ToolContext } from "./context.js";
+import { ok, safe, findUser, type ToolContext } from "./context.js";
 
 export function familyTools(ctx: ToolContext) {
   /** Wem gehört ein Kalender laut Konfiguration? "shared" = Familienkalender. */
@@ -76,6 +76,38 @@ export function familyTools(ctx: ToolContext) {
       if (!data?.notify_service) throw new Error(`${a.person} hat keinen Benachrichtigungsdienst`);
       await ctx.ha.notify(data.notify_service, `Erinnerung von ${ctx.user.name}`, a.message);
       return ok(`Erinnerung an ${data.name} geschickt`);
+    })),
+
+    tool("create_reminder", "Erinnerung zu einem Zeitpunkt anlegen, optional wiederkehrend. Standard: für die fragende Person.", {
+      message: z.string(),
+      at: z.string().describe("ISO-Zeit mit Zeitzone, z. B. 2026-11-23T08:00:00+01:00"),
+      person: z.string().optional().describe("Name aus dem Haushalt, falls jemand anderes erinnert werden soll"),
+      repeat: z.enum(["none", "daily", "weekly", "monthly", "yearly"]).default("none"),
+    }, safe(async (a) => {
+      const due = new Date(a.at);
+      if (Number.isNaN(due.getTime())) throw new Error("Zeitpunkt nicht lesbar");
+      const target = a.person ? await findUser(a.person) : { id: ctx.user.id, name: ctx.user.name };
+      if (ctx.user.role === "child" && target.id !== ctx.user.id) throw new Error("Kinder können nur sich selbst erinnern");
+      const { error } = await db().from("reminders").insert({ user_id: target.id, message: a.message, due_at: due.toISOString(), repeat: a.repeat, created_by: ctx.user.id });
+      if (error) throw error;
+      const when = due.toLocaleString("de-DE", { timeZone: "Europe/Berlin", dateStyle: "short", timeStyle: "short" });
+      return ok(`Erinnerung für ${target.name} am ${when}${a.repeat !== "none" ? ` (${a.repeat})` : ""}`);
+    })),
+
+    tool("list_reminders", "Offene Erinnerungen (eigene; Erwachsene sehen alle).", {}, safe(async () => {
+      let q = db().from("reminders").select("id, message, due_at, repeat, user_id, users!reminders_user_id_fkey(name)").eq("done", false).order("due_at");
+      if (ctx.user.role === "child") q = q.eq("user_id", ctx.user.id);
+      const { data, error } = await q;
+      if (error) throw error;
+      return ok(data ?? []);
+    })),
+
+    tool("cancel_reminder", "Erinnerung löschen.", { id: z.string().uuid() }, safe(async (a) => {
+      let q = db().from("reminders").update({ done: true }).eq("id", a.id);
+      if (ctx.user.role === "child") q = q.eq("user_id", ctx.user.id);
+      const { error } = await q;
+      if (error) throw error;
+      return ok("Erinnerung gelöscht");
     })),
   ];
 }

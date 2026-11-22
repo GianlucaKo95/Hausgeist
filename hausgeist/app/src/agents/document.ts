@@ -21,33 +21,47 @@ export class DocumentAgent {
     this.paperless = new Paperless(config);
   }
 
-  keep(sha256: string, pdf: Buffer): void {
-    writeFileSync(this.path(sha256), pdf);
+  keep(sha256: string, data: Buffer, mime = "application/pdf"): void {
+    writeFileSync(this.path(sha256, mime), data);
+  }
+
+  private static readonly EXT: Record<string, string> = {
+    "application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif",
+  };
+
+  private find(sha256: string): { path: string; ext: string } | null {
+    for (const ext of Object.values(DocumentAgent.EXT)) {
+      const p = join(this.inbox, `${sha256}.${ext}`);
+      if (existsSync(p)) return { path: p, ext };
+    }
+    return null;
   }
 
   read(sha256: string): Buffer | null {
-    const p = this.path(sha256);
-    return existsSync(p) ? readFileSync(p) : null;
+    const f = this.find(sha256);
+    return f ? readFileSync(f.path) : null;
   }
 
-  private path(sha256: string): string {
-    return join(this.inbox, `${sha256}.pdf`);
+  private path(sha256: string, mime: string): string {
+    return join(this.inbox, `${sha256}.${DocumentAgent.EXT[mime] ?? "bin"}`);
   }
 
   /** Legt das Dokument ab. Gibt die Paperless-Task-ID zurück oder null, wenn Paperless nicht konfiguriert ist. */
   async file(sha256: string, meta: { title: string; tags: string[]; created?: string | null; filename: string; refId?: string }) {
-    const pdf = this.read(sha256);
-    if (!pdf) {
-      log.warn(`PDF ${sha256} nicht mehr vorhanden`);
+    const found = this.find(sha256);
+    if (!found) {
+      log.debug(`Kein Dokument zu ${sha256} (z. B. Zahlung aus dem Chat)`);
       return null;
     }
+    const pdf = readFileSync(found.path);
     if (!this.paperless.enabled) {
       log.warn("Paperless nicht konfiguriert – PDF bleibt im Posteingang des Add-ons");
       return null;
     }
     const tags = [...new Set(meta.tags.filter(Boolean))];
-    const taskId = await this.paperless.upload(pdf, meta.filename, meta.title, tags, meta.created);
-    unlinkSync(this.path(sha256));
+    const filename = /\.[a-z0-9]+$/i.test(meta.filename) ? meta.filename : `${meta.filename}.${found.ext}`;
+    const taskId = await this.paperless.upload(pdf, filename, meta.title, tags, meta.created, found.ext);
+    unlinkSync(found.path);
     await audit({ agent: "document", action: "file", level: 0, result: "ok", ref_table: "invoices", ref_id: meta.refId, detail: { taskId, tags } });
     log.info(`Abgelegt: ${meta.title}`);
     return taskId;

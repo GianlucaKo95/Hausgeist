@@ -95,5 +95,81 @@ export function householdTools(ctx: ToolContext) {
       await db().from("chores").update({ last_done: today, next_due: next }).eq("id", a.id);
       return ok(next ? `Erledigt, nächstes Mal am ${next}` : "Erledigt");
     })),
+
+    tool("list_areas", "Räume/Bereiche aus Home Assistant mit den freigegebenen Geräten darin, z. B. für „alle Lichter im Wohnzimmer“.", {}, safe(async () => {
+      const areas = await ctx.ha.areas();
+      return ok(areas.map((a) => ({ area: a.area, entities: a.entities.filter(allowed) })).filter((a) => a.entities.length > 0));
+    })),
+
+    tool("schedule_device_action", "Gerät zu einem Zeitpunkt schalten, optional wiederkehrend (z. B. Waschmaschine um 13 Uhr, wenn PV-Überschuss erwartet wird). Sicherheitsrelevante Geräte können nicht geplant werden.", {
+      run_at: z.string().describe("ISO-Zeit mit Zeitzone"),
+      repeat: z.enum(["none", "daily", "weekdays", "weekly"]).default("none"),
+      domain: z.string(), service: z.string(), entity_id: z.string(),
+      data: z.record(z.string(), z.unknown()).optional(),
+      label: z.string().optional(),
+    }, safe(async (a) => {
+      requireAdult(ctx);
+      if (!allowed(a.entity_id)) throw new Error(`${a.entity_id} ist nicht freigegeben`);
+      if (isSensitiveHaService(a.domain) || isSensitiveHaService(a.entity_id.split(".")[0]))
+        throw new Error("Sicherheitsrelevante Geräte (Schlösser, Alarm, Tore …) werden nicht zeitgesteuert geschaltet");
+      const at = new Date(a.run_at);
+      if (Number.isNaN(at.getTime())) throw new Error("Zeitpunkt nicht lesbar");
+      const { error } = await db().from("scheduled_actions").insert({
+        run_at: at.toISOString(), repeat: a.repeat, domain: a.domain, service: a.service, entity_id: a.entity_id,
+        data: a.data ?? {}, label: a.label ?? null, created_by: ctx.user.id,
+      });
+      if (error) throw error;
+      return ok(`Geplant: ${a.domain}.${a.service} → ${a.entity_id} am ${at.toLocaleString("de-DE", { timeZone: "Europe/Berlin", dateStyle: "short", timeStyle: "short" })}${a.repeat !== "none" ? ` (${a.repeat})` : ""}`);
+    })),
+
+    tool("list_scheduled_actions", "Geplante Schaltungen.", {}, safe(async () => {
+      const { data, error } = await db().from("scheduled_actions").select("id, run_at, repeat, domain, service, entity_id, label, last_run, last_result").eq("active", true).order("run_at");
+      if (error) throw error;
+      return ok(data ?? []);
+    })),
+
+    tool("cancel_scheduled_action", "Geplante Schaltung löschen.", { id: z.string().uuid() }, safe(async (a) => {
+      requireAdult(ctx);
+      await db().from("scheduled_actions").update({ active: false }).eq("id", a.id);
+      return ok("Gelöscht");
+    })),
+
+    tool("create_alert", "Geräteüberwachung: melden, wenn ein Wert unter/über einer Schwelle liegt, einen Zustand hat oder das Gerät nicht erreichbar ist – optional mit Schaltung. Beispiele: Waschmaschine fertig (Leistung unter 5 W für 3 Minuten), Gerät offline, Speicher über 95 % → Waschmaschine einschalten.", {
+      entity_id: z.string(),
+      condition: z.enum(["below", "above", "equals", "unavailable"]),
+      value: z.string().optional().describe("Schwelle (Zahl) oder Zustand, bei unavailable leer"),
+      for_minutes: z.number().int().min(0).default(0),
+      message: z.string(),
+      notify: z.array(z.string()).default([]).describe("Namen; leer = alle Erwachsenen"),
+      action: z.object({ domain: z.string(), service: z.string(), entity_id: z.string(), data: z.record(z.string(), z.unknown()).optional() }).optional(),
+    }, safe(async (a) => {
+      requireAdult(ctx);
+      if (!allowed(a.entity_id)) throw new Error(`${a.entity_id} ist nicht freigegeben`);
+      if ((a.condition === "below" || a.condition === "above") && (a.value == null || Number.isNaN(Number(a.value))))
+        throw new Error("Für below/above wird eine Zahl als value gebraucht");
+      if (a.action) {
+        if (!allowed(a.action.entity_id)) throw new Error(`${a.action.entity_id} ist nicht freigegeben`);
+        if (isSensitiveHaService(a.action.domain) || isSensitiveHaService(a.action.entity_id.split(".")[0]))
+          throw new Error("Sicherheitsrelevante Geräte können nicht automatisch geschaltet werden");
+      }
+      const { error } = await db().from("alerts").insert({
+        entity_id: a.entity_id, condition: a.condition, value: a.value ?? null, for_minutes: a.for_minutes,
+        message: a.message, notify: a.notify, action: a.action ?? null, created_by: ctx.user.id,
+      });
+      if (error) throw error;
+      return ok("Überwachung angelegt");
+    })),
+
+    tool("list_alerts", "Aktive Geräteüberwachungen.", {}, safe(async () => {
+      const { data, error } = await db().from("alerts").select("id, entity_id, condition, value, for_minutes, message, notify, action, triggered, last_fired").eq("active", true);
+      if (error) throw error;
+      return ok(data ?? []);
+    })),
+
+    tool("delete_alert", "Überwachung beenden.", { id: z.string().uuid() }, safe(async (a) => {
+      requireAdult(ctx);
+      await db().from("alerts").update({ active: false }).eq("id", a.id);
+      return ok("Beendet");
+    })),
   ];
 }

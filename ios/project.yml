@@ -7,7 +7,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.10"
-    MARKETING_VERSION: "0.3.0"
+    MARKETING_VERSION: "0.4.0"
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: ""          # in Xcode unter Signing & Capabilities setzen
 targets:
@@ -40,3 +40,4 @@ targets:
               NSIncludesSubdomains: true
               NSExceptionAllowsInsecureHTTPLoads: true
         NSLocalNetworkUsageDescription: Hausgeist verbindet sich mit deinem Home-Assistant-Server.
+        NSCameraUsageDescription: Zum Scannen von Briefen, Rechnungen und Verträgen.

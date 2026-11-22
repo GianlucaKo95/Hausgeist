@@ -51,6 +51,35 @@ export function memoryTools(ctx: ToolContext) {
   ];
 }
 
+export function noteTools(ctx: ToolContext) {
+  return [
+    tool("save_note", "Haushaltswissen speichern, z. B. 'Haupthahn: Keller links' oder 'Gäste-WLAN'. Private Notizen sieht nur die eigene Person.", {
+      title: z.string(), content: z.string(), private: z.boolean().default(false), id: z.string().uuid().optional(),
+    }, safe(async (a) => {
+      const row = { title: a.title, content: a.content, private: a.private, owner_id: ctx.user.id, updated_at: new Date().toISOString() };
+      const q = a.id ? db().from("notes").update(row).eq("id", a.id).or(`private.eq.false,owner_id.eq.${ctx.user.id}`) : db().from("notes").insert(row);
+      const { error } = await q;
+      if (error) throw error;
+      return ok("Notiz gespeichert");
+    })),
+
+    tool("find_notes", "Notizen durchsuchen (leer = alle).", { query: z.string().default("") }, safe(async (a) => {
+      const term = a.query.replace(/[%,()]/g, "");
+      let q = db().from("notes").select("id, title, content, private, updated_at").or(`private.eq.false,owner_id.eq.${ctx.user.id}`).order("updated_at", { ascending: false }).limit(20);
+      if (term) q = q.or(`title.ilike.%${term}%,content.ilike.%${term}%`);
+      const { data, error } = await q;
+      if (error) throw error;
+      return ok(data ?? []);
+    })),
+
+    tool("delete_note", "Notiz löschen.", { id: z.string().uuid() }, safe(async (a) => {
+      const { error } = await db().from("notes").delete().eq("id", a.id).or(`private.eq.false,owner_id.eq.${ctx.user.id}`);
+      if (error) throw error;
+      return ok("Gelöscht");
+    })),
+  ];
+}
+
 export function researchTools(ctx: ToolContext) {
   return [
     tool("save_research", "Ergebnis einer Recherche oder Entscheidungsvorlage mit Quellen ablegen.", {

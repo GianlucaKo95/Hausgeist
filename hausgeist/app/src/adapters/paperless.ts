@@ -45,10 +45,11 @@ export class Paperless {
   }
 
   /** Lädt ein PDF hoch. Paperless antwortet mit einer Task-ID (Verarbeitung läuft asynchron). */
-  async upload(pdf: Buffer, filename: string, title: string, tags: string[], created?: string | null): Promise<string> {
+  async upload(pdf: Buffer, filename: string, title: string, tags: string[], created?: string | null, ext = "pdf"): Promise<string> {
+    const types: Record<string, string> = { pdf: "application/pdf", jpg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif" };
     const base = this.config.paperless_url.replace(/\/$/, "");
     const form = new FormData();
-    form.append("document", new Blob([new Uint8Array(pdf)], { type: "application/pdf" }), filename);
+    form.append("document", new Blob([new Uint8Array(pdf)], { type: types[ext] ?? "application/octet-stream" }), filename);
     form.append("title", title);
     if (created) form.append("created", created);
     for (const t of tags) form.append("tags", String(await this.tagId(t)));

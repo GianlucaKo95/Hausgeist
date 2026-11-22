@@ -43,6 +43,8 @@ const Options = z.object({
     .string()
     .regex(/^(([01]\d|2[0-3]):[0-5]\d)?$/, "daily_brief im Format HH:MM")
     .default("07:30"),
+  mail_triage: z.boolean().default(true),
+  weekly_offers: z.boolean().default(true),
   log_level: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
 

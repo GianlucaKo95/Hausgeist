@@ -10,7 +10,7 @@ import { mailTools } from "../dist/tools/mail.js";
 import { householdTools } from "../dist/tools/household.js";
 import { familyTools } from "../dist/tools/family.js";
 import { githubTools } from "../dist/tools/business.js";
-import { memoryTools, researchTools } from "../dist/tools/memory.js";
+import { memoryTools, noteTools, researchTools } from "../dist/tools/memory.js";
 
 const admin = { id: "a", name: "Luca", role: "admin", approval_limit_cents: 0, ha_user_id: "x", notify_service: "m" };
 const adult = { id: "b", name: "Partnerin", role: "adult", approval_limit_cents: 50000, ha_user_id: "y", notify_service: "n" };
@@ -60,7 +60,7 @@ test("Alle Werkzeuge lassen sich als MCP-Server registrieren", () => {
     finance: financeTools(ctx), documents: documentTools(ctx), shopping: shoppingTools(ctx),
     mail: mailTools(ctx, "private", "communication"), household: householdTools(ctx), family: familyTools(ctx),
     business: [...mailTools(ctx, "business", "business"), ...githubTools(ctx)],
-    research: researchTools(ctx), master: memoryTools(ctx),
+    research: researchTools(ctx), master: [...memoryTools(ctx), ...noteTools(ctx)],
   };
   let count = 0;
   for (const [name, tools] of Object.entries(sets)) {
@@ -70,5 +70,5 @@ test("Alle Werkzeuge lassen sich als MCP-Server registrieren", () => {
     assert.equal(server.type, "sdk");
     count += tools.length;
   }
-  assert.ok(count >= 50, `nur ${count} Werkzeuge`);
+  assert.ok(count >= 80, `nur ${count} Werkzeuge`);
 });

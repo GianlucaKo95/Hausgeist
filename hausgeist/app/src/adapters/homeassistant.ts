@@ -66,6 +66,43 @@ export class HomeAssistant {
     if (!res.ok) throw new Error(`${domain}.${service} fehlgeschlagen: ${res.status} ${await res.text()}`);
   }
 
+  /** Einzelner WebSocket-Befehl, z. B. config/area_registry/list. */
+  async wsCommand<T>(type: string, extra: Record<string, unknown> = {}): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const ws = new WebSocket(this.config.haWsUrl);
+      const timer = setTimeout(() => { ws.terminate(); reject(new Error(`${type}: Zeitüberschreitung`)); }, 15_000);
+      ws.on("message", (raw) => {
+        const msg = JSON.parse(raw.toString());
+        if (msg.type === "auth_required") ws.send(JSON.stringify({ type: "auth", access_token: this.config.supervisorToken }));
+        else if (msg.type === "auth_ok") ws.send(JSON.stringify({ id: 1, type, ...extra }));
+        else if (msg.type === "auth_invalid") { clearTimeout(timer); ws.close(); reject(new Error("Token abgelehnt")); }
+        else if (msg.type === "result" && msg.id === 1) {
+          clearTimeout(timer);
+          ws.close();
+          if (msg.success) resolve(msg.result as T);
+          else reject(new Error(`${type}: ${msg.error?.message ?? "Fehler"}`));
+        }
+      });
+      ws.on("error", (e) => { clearTimeout(timer); reject(e); });
+    });
+  }
+
+  /** Bereiche (Räume) mit ihren Entitäten. */
+  async areas(): Promise<{ area: string; entities: string[] }[]> {
+    const [areas, entities, devices] = await Promise.all([
+      this.wsCommand<{ area_id: string; name: string }[]>("config/area_registry/list"),
+      this.wsCommand<{ entity_id: string; area_id: string | null; device_id: string | null }[]>("config/entity_registry/list"),
+      this.wsCommand<{ id: string; area_id: string | null }[]>("config/device_registry/list"),
+    ]);
+    const deviceArea = new Map(devices.map((d) => [d.id, d.area_id]));
+    return areas.map((a) => ({
+      area: a.name,
+      entities: entities
+        .filter((e) => (e.area_id ?? (e.device_id ? deviceArea.get(e.device_id) : null)) === a.area_id)
+        .map((e) => e.entity_id),
+    }));
+  }
+
   /**
    * Lauscht auf Klicks in Benachrichtigungen. Liefert die Action und die
    * Home-Assistant-Benutzer-ID der Person, die geklickt hat.

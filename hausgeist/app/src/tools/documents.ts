@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "../core/db.js";
 import { noticeDeadline } from "../core/checks.js";
 import { ok, safe, requireAdult, type ToolContext } from "./context.js";
+import { uploadSource } from "./finance.js";
 
 export function documentTools(ctx: ToolContext) {
   return [
@@ -84,6 +85,28 @@ export function documentTools(ctx: ToolContext) {
       const { error } = await db().from("deadlines").update({ done: true }).eq("id", a.id);
       if (error) throw error;
       return ok("Erledigt");
+    })),
+
+    tool("process_upload", "Ein in der App hochgeladenes Dokument (Foto, Scan, PDF) einordnen und weiterleiten: Rechnung → Zahlungsfreigabe, Vertrag → erfassen mit Frist, Termin → Kalendervorschlag, sonst ablegen.", {
+      upload_id: z.string().uuid(),
+      note: z.string().optional().describe("Hinweis der Person, z. B. 'Vertrag fürs Auto'"),
+    }, safe(async (a) => {
+      requireAdult(ctx);
+      const src = await uploadSource(ctx, a.upload_id);
+      return ok(await ctx.intake.handleFile({ ...src, note: a.note }));
+    })),
+
+    tool("archive_upload", "Ein hochgeladenes Dokument nur in Paperless ablegen, ohne weitere Verarbeitung.", {
+      upload_id: z.string().uuid(),
+      title: z.string(),
+      tags: z.array(z.string()).default([]),
+    }, safe(async (a) => {
+      requireAdult(ctx);
+      if (!ctx.paperless.enabled) throw new Error("Paperless ist nicht konfiguriert");
+      const src = await uploadSource(ctx, a.upload_id);
+      const ext = src.mime === "application/pdf" ? "pdf" : src.mime.split("/")[1].replace("jpeg", "jpg");
+      const id = await ctx.paperless.upload(src.data, src.filename, a.title, a.tags, null, ext);
+      return ok(`In Paperless abgelegt (Task ${id})`);
     })),
   ];
 }
