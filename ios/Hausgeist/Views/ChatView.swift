@@ -26,6 +26,10 @@ struct ChatView: View {
     @State private var showFiles = false
     @State private var attachError: String?
 
+    @State private var speech = SpeechInput()
+    @State private var conversation = false
+    @AppStorage("speakReplies") private var speakReplies = false
+
     var body: some View {
         NavigationStack {
             ScrollViewReader { proxy in
@@ -56,6 +60,30 @@ struct ChatView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) { composer }
+            .safeAreaInset(edge: .top) {
+                if conversation {
+                    HStack(spacing: 8) {
+                        Image(systemName: speech.isListening ? "ear" : (busy ? "hourglass" : "speaker.wave.2"))
+                        Text(speech.isListening ? (speech.transcript.isEmpty ? "Ich höre zu …" : speech.transcript)
+                             : (busy ? "Hausgeist denkt nach …" : "Hausgeist spricht …"))
+                            .lineLimit(2)
+                        Spacer()
+                    }
+                    .font(.subheadline)
+                    .padding(10)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    .padding(.horizontal)
+                }
+            }
+            .task(id: conversation) { await conversationLoop() }
+            .onChange(of: speech.transcript) {
+                if !conversation && speech.isListening { input = speech.transcript }
+            }
+            .onDisappear {
+                speech.stop()
+                Speaker.shared.stop()
+                conversation = false
+            }
             .photosPicker(isPresented: $showPhotos, selection: $photoItems, maxSelectionCount: 5, matching: .images)
             .onChange(of: photoItems) { Task { await loadPhotos() } }
             .fullScreenCover(isPresented: $showScanner) {
@@ -75,6 +103,15 @@ struct ChatView: View {
             .navigationTitle("Hausgeist")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        Task { await toggleConversation() }
+                    } label: {
+                        Label(conversation ? "Gespräch beenden" : "Gesprächsmodus",
+                              systemImage: conversation ? "waveform.circle.fill" : "waveform.circle")
+                    }
+                    .tint(conversation ? .red : .accentColor)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Neu", systemImage: "square.and.pencil") { Task { await reset() } }
                         .disabled(busy)
@@ -179,6 +216,16 @@ struct ChatView: View {
                 .padding(.vertical, 8)
                 .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
             Button {
+                Task { await toggleDictation() }
+            } label: {
+                Image(systemName: speech.isListening && !conversation ? "mic.circle.fill" : "mic.circle")
+                    .font(.system(size: 30))
+                    .foregroundStyle(speech.isListening && !conversation ? Color.red : Color.accentColor)
+            }
+            .disabled(busy || conversation)
+            .accessibilityLabel(speech.isListening ? "Diktat beenden" : "Sprechen")
+            Button {
+                speech.stop()
                 Task { await send() }
             } label: {
                 Image(systemName: "arrow.up.circle.fill").font(.system(size: 32))
@@ -239,9 +286,70 @@ struct ChatView: View {
         do {
             let reply = try await APIClient(auth: auth).chat(text, attachments: files)
             messages.append(ChatMessage(sender: .ghost, text: reply))
+            if speakReplies || conversation { await speakAndWait(reply) }
         } catch {
             messages.append(ChatMessage(sender: .error, text: error.localizedDescription))
         }
+    }
+
+    // MARK: Sprache
+
+    private func toggleDictation() async {
+        if speech.isListening { speech.stop(); return }
+        guard await SpeechInput.requestPermissions() else {
+            attachError = "Bitte erlaube Mikrofon und Spracherkennung in den Einstellungen."
+            return
+        }
+        Speaker.shared.stop()
+        do { try speech.start() } catch { attachError = error.localizedDescription }
+    }
+
+    private func toggleConversation() async {
+        if conversation {
+            conversation = false
+            speech.stop()
+            Speaker.shared.stop()
+            return
+        }
+        guard await SpeechInput.requestPermissions() else {
+            attachError = "Bitte erlaube Mikrofon und Spracherkennung in den Einstellungen."
+            return
+        }
+        conversation = true
+    }
+
+    private func speakAndWait(_ text: String) async {
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            Speaker.shared.speak(text) { c.resume() }
+        }
+    }
+
+    /// Gesprächsmodus: zuhören → nach 1,5 s Pause senden → Antwort vorlesen → wieder zuhören.
+    private func conversationLoop() async {
+        guard conversation else { return }
+        while conversation && !Task.isCancelled {
+            if !speech.isListening && !busy && !Speaker.shared.isSpeaking {
+                do { try speech.start() } catch {
+                    attachError = error.localizedDescription
+                    conversation = false
+                    return
+                }
+            }
+            try? await Task.sleep(for: .milliseconds(300))
+            let text = speech.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+            if speech.isListening && !text.isEmpty && Date().timeIntervalSince(speech.lastChange) > 1.5 {
+                speech.stop()
+                let lower = text.lowercased()
+                if ["stopp", "stop", "ende", "danke das wars", "danke, das war's", "tschüss"].contains(where: { lower.hasPrefix($0) }) {
+                    conversation = false
+                    Speaker.shared.speak("Bis später!")
+                    return
+                }
+                input = text
+                await send()
+            }
+        }
+        speech.stop()
     }
 
     private func reset() async {

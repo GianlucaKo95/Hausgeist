@@ -21,7 +21,7 @@ Persönliches Agenten-Netzwerk als Home-Assistant-Add-on: ein **Master-Agent** n
 | Household | HA-Geräte und Räume (Whitelist), zeitgesteuertes Schalten, Gerätealarme und Wenn-dann-Regeln, Energie mit PV/Speicher, Haushaltsaufgaben und Wartungen | Schlösser, Alarm, Rollläden/Tore, Sirenen, Ventile |
 | Personal & Family | Apple-Kalender, Termine im eigenen/gemeinsamen Kalender, Familienaufgaben, Erinnerungen zu Zeitpunkten | Termin im Kalender einer anderen Person |
 | Business | Geschäftspostfach (scope `business`), GitHub-Repos und Issues | Mail senden |
-| Research | Websuche, Quellen prüfen, Entscheidungsvorlagen ablegen | – |
+| Research | Websuche, Quellen prüfen, Fotos erkennen (Ort, Hotel, Produkt), Bildersuche (optional), Hotels/Reisen finden und vergleichen, Entscheidungsvorlagen | Buchung (vorausgefüllte Links; gebucht wird dort) |
 
 Der Master-Agent selbst verwaltet außerdem **Notizen** (Haushaltswissen wie „Wo ist der Haupthahn?“) und Präferenzen.
 
@@ -79,6 +79,7 @@ energy:
   grid_power: sensor.netz_leistung
   house_power: sensor.hausverbrauch
 github_token: <fine-grained Token, Issues lesen/schreiben>
+serpapi_key: ""               # optional: Bildersuche (Google Lens) über serpapi.com
 daily_brief: "07:30"
 mail_triage: true             # Mail-Überblick morgens
 weekly_offers: true           # Prospekt-Angebote montags

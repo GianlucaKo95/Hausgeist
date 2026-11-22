@@ -40,7 +40,18 @@ export interface CalendarPayload {
   notes?: string | null;
 }
 
+export interface BookingPayload {
+  title: string;
+  checkin: string;
+  checkout: string;
+  guests: string;
+  total_cents: number | null;
+  options: { provider: string; price_euro?: number; url: string }[];
+  notes?: string | null;
+}
+
 type Payloads = {
+  booking: BookingPayload;
   send_mail: SendMailPayload;
   order: OrderPayload;
   ha_service: HaServicePayload;
@@ -68,7 +79,8 @@ export class ActionService {
     payload: Payloads[K],
     meta: { agent: string; summary: string; requestedBy: AppUser | null },
   ): Promise<{ id: string; approvers: string[] }> {
-    const amount = kind === "order" ? (payload as OrderPayload).total_cents : null;
+    const amount = kind === "order" ? (payload as OrderPayload).total_cents
+      : kind === "booking" ? (payload as BookingPayload).total_cents : null;
     const { data, error } = await db()
       .from("actions")
       .insert({ kind, agent: meta.agent, summary: meta.summary, payload, amount_cents: amount, requested_by: meta.requestedBy?.id ?? null })
@@ -81,7 +93,7 @@ export class ActionService {
     const approvers = users.filter(
       (u) => u.notify_service && canApproveAction(u, { kind, amount_cents: amount, mailbox_owner_id: owner }).allowed,
     );
-    const title = { send_mail: "Mail senden?", order: "Bestellen?", ha_service: "Gerät schalten?", calendar_event: "Termin eintragen?" }[kind];
+    const title = { send_mail: "Mail senden?", order: "Bestellen?", ha_service: "Gerät schalten?", calendar_event: "Termin eintragen?", booking: "Buchen?" }[kind];
     const requester = meta.requestedBy ? `\nAngefragt von ${meta.requestedBy.name}` : "";
     for (const u of approvers) {
       await this.ha.notify(u.notify_service!, title, `${meta.summary}${requester}`, [
@@ -175,6 +187,13 @@ export class ActionService {
         const p = payload as unknown as HaServicePayload;
         await this.ha.callService(p.domain, p.service, { entity_id: p.entity_id, ...(p.data ?? {}) });
         return `${p.domain}.${p.service} für ${p.entity_id} ausgeführt`;
+      }
+      case "booking": {
+        // Keine automatische Buchung mit Zahlungsdaten: Die Person bucht über den Link.
+        const p = payload as unknown as BookingPayload;
+        await db().from("family_tasks").insert({ title: `Buchung abschließen: ${p.title} (${p.checkin}–${p.checkout})`, shared: true, due_at: null });
+        const links = p.options.map((o) => `${o.provider}: ${o.url}`).join("\n");
+        return `Buchung ${p.title} freigegeben. Bitte hier abschließen:\n${links}`;
       }
       case "calendar_event": {
         const p = payload as unknown as CalendarPayload;

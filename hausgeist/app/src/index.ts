@@ -54,7 +54,7 @@ async function main() {
   });
 
   communication.start();
-  startServer(config, master, finance, actions);
+  startServer(config, master, finance, actions, ha);
   routines.start();
 
   log.info(`Hausgeist läuft (Zahlungsmodus: ${payments.name})`);

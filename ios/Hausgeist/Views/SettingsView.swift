@@ -8,6 +8,7 @@ struct SettingsView: View {
     @State private var server = AppConfig.serverURL?.absoluteString ?? ""
     @State private var status: String?
     @State private var checking = false
+    @AppStorage("speakReplies") private var speakReplies = false
 
     var body: some View {
         NavigationStack {
@@ -31,6 +32,13 @@ struct SettingsView: View {
                     Text("Server")
                 } footer: {
                     Text("Adresse des Hausgeist-Add-ons im VPN (Tailscale/WireGuard), Port 8099.")
+                }
+                Section {
+                    Toggle("Antworten vorlesen", isOn: $speakReplies)
+                } header: {
+                    Text("Sprache")
+                } footer: {
+                    Text("Im Gesprächsmodus (Wellen-Symbol im Chat) liest der Hausgeist immer vor. Mit Siri: „Hey Siri, frag Hausgeist“ – auch im Auto über CarPlay.")
                 }
                 Section {
                     Button("Abmelden", role: .destructive) { Task { await auth.signOut() } }

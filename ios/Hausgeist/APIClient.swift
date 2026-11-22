@@ -69,14 +69,14 @@ struct APIClient {
         return try await request("api/me")
     }
 
-    func chat(_ message: String, attachments: [ChatAttachment] = []) async throws -> String {
+    func chat(_ message: String, attachments: [ChatAttachment] = [], pushIfSlow: Bool = false) async throws -> String {
         if AppConfig.isDemo { return DemoData.reply }
         struct File: Encodable { let name: String; let mime: String; let data: String }
-        struct Body: Encodable { let message: String; let attachments: [File] }
+        struct Body: Encodable { let message: String; let attachments: [File]; let push_if_slow: Bool }
         struct R: Decodable { let reply: String }
         let body = Body(message: message, attachments: attachments.map {
             File(name: $0.name, mime: $0.mime, data: $0.data.base64EncodedString())
-        })
+        }, push_if_slow: pushIfSlow)
         let r: R = try await request("api/chat", method: "POST", body: body)
         return r.reply
     }

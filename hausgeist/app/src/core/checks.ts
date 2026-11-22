@@ -92,7 +92,7 @@ export function duplicateKey(inv: {
   return `amt:${normalizeIban(inv.iban)}:${inv.amount_cents}:${inv.invoice_date ?? "?"}`;
 }
 
-export type ActionKind = "send_mail" | "order" | "ha_service" | "calendar_event";
+export type ActionKind = "send_mail" | "order" | "ha_service" | "calendar_event" | "booking";
 
 /**
  * Freigaberechte für Stufe-2-Aktionen außer Zahlungen.
@@ -106,7 +106,7 @@ export function canApproveAction(
   action: { kind: ActionKind; amount_cents: number | null; mailbox_owner_id?: string | null },
 ): ApprovalDecision {
   if (user.role === "child") return { allowed: false, reason: "Kinder können keine Aktionen freigeben." };
-  if (action.kind === "order" && user.role === "adult" && (action.amount_cents ?? 0) > user.approval_limit_cents)
+  if ((action.kind === "order" || action.kind === "booking") && user.role === "adult" && (action.amount_cents ?? 0) > user.approval_limit_cents)
     return { allowed: false, reason: `Bestellung über deinem Limit von ${formatEuro(user.approval_limit_cents)} – nur der Admin kann freigeben.` };
   if (action.kind === "send_mail" && user.role !== "admin" && action.mailbox_owner_id && action.mailbox_owner_id !== user.id)
     return { allowed: false, reason: "Nur der Besitzer des Postfachs oder der Admin kann diese Mail freigeben." };

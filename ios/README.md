@@ -1,6 +1,6 @@
 # Hausgeist für iOS
 
-SwiftUI-App mit drei Tabs: **Chat** mit dem Master-Agenten, **Freigaben** (Zahlungen und andere Aktionen mit Freigeben/Ablehnen) und **Einstellungen**. Es gibt keine Fremdabhängigkeiten: Der Login läuft direkt über die Supabase-Auth-REST-API, die Sitzung liegt im Schlüsselbund.
+SwiftUI-App mit Sprache (Diktat, Vorlesen, Gesprächsmodus, Siri: „Frag Hausgeist“) und drei Tabs: **Chat** mit dem Master-Agenten, **Freigaben** (Zahlungen und andere Aktionen mit Freigeben/Ablehnen) und **Einstellungen**. Es gibt keine Fremdabhängigkeiten: Der Login läuft direkt über die Supabase-Auth-REST-API, die Sitzung liegt im Schlüsselbund.
 
 ## Projekt erzeugen
 

@@ -7,6 +7,7 @@ import { saveUpload } from "./uploads.js";
 import { isSupportedMime } from "../agents/extract.js";
 import type { FinanceAgent } from "../agents/finance.js";
 import type { ActionService } from "./actions.js";
+import type { HomeAssistant } from "../adapters/homeassistant.js";
 import { logger } from "./log.js";
 import { CHAT_PAGE } from "./chat-page.js";
 
@@ -68,7 +69,7 @@ async function userFromSupabaseToken(token: string): Promise<AppUser | null> {
  * - App: Authorization: Bearer <Supabase-Access-Token>
  * - Ingress: Home Assistant setzt X-Remote-User-Id.
  */
-export function startServer(config: Config, master: MasterAgent, finance: FinanceAgent, actions: ActionService): void {
+export function startServer(config: Config, master: MasterAgent, finance: FinanceAgent, actions: ActionService, ha: HomeAssistant): void {
   const resolveUser = async (req: IncomingMessage): Promise<AppUser | null> => {
     const auth = req.headers.authorization ?? "";
     if (auth.startsWith("Bearer ")) return userFromSupabaseToken(auth.slice(7));
@@ -88,7 +89,7 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
         res.end(CHAT_PAGE);
         return;
       }
-      if (path.endsWith("/api/health")) return json(res, 200, { ok: true, version: "0.4.0" });
+      if (path.endsWith("/api/health")) return json(res, 200, { ok: true, version: "0.6.0" });
 
       const user = await resolveUser(req);
       if (!user) return json(res, 401, { error: "Nicht angemeldet oder nicht als Haushaltsmitglied eingetragen." });
@@ -117,8 +118,19 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
           attachments.push({ uploadId: up.id, name, mime, data });
         }
         if (!message && attachments.length === 0) return json(res, 400, { error: "message fehlt" });
-        const reply = await master.chat(user, message.slice(0, 8000), attachments);
-        return json(res, 200, { reply });
+        const work = master.chat(user, message.slice(0, 8000), attachments);
+
+        // Siri & Co. können nicht lange warten: nach 20 s kommt die Antwort per Mitteilung.
+        if (body.push_if_slow === true) {
+          const timeout = new Promise<null>((r) => setTimeout(() => r(null), 20_000));
+          const reply = await Promise.race([work, timeout]);
+          if (reply !== null) return json(res, 200, { reply });
+          work.then(async (r) => {
+            if (user.notify_service) await ha.notify(user.notify_service, "Hausgeist", r.slice(0, 1500));
+          }).catch((e) => log.error("Späte Antwort fehlgeschlagen", e));
+          return json(res, 200, { reply: "Das dauert etwas länger – ich schicke dir die Antwort als Mitteilung.", pending: true });
+        }
+        return json(res, 200, { reply: await work });
       }
 
       if (req.method === "GET" && path.endsWith("/api/approvals")) {

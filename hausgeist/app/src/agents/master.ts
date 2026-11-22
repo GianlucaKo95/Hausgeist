@@ -17,6 +17,7 @@ import { householdTools } from "../tools/household.js";
 import { familyTools } from "../tools/family.js";
 import { githubTools } from "../tools/business.js";
 import { memoryTools, noteTools, researchTools } from "../tools/memory.js";
+import { viewUploadTool, reverseImageSearchTool, bookingTool } from "../tools/media.js";
 
 const log = logger("master");
 
@@ -88,9 +89,14 @@ Keine Daten oder Mails des Arbeitgebers. Senden geht nur über request_send_mail
     server: "business",
   },
   research: {
-    description: "Recherche: Internet- und Marktrecherche, Quellen prüfen, Anbieter vergleichen, Sachverhalte analysieren, Entscheidungsvorlagen.",
+    description: "Recherche und Reisen: Internet- und Marktrecherche, Fotos erkennen (Ort, Hotel, Produkt), Bildersuche, Hotels/Reisen finden und Preise vergleichen, Buchung zur Freigabe vorlegen, Entscheidungsvorlagen.",
     prompt: `Du bist der Research-Agent. Du recherchierst im Web, prüfst Quellen gegen und erstellst knappe Entscheidungsvorlagen mit Optionen, Vor- und Nachteilen und Quellenlinks.
-Lege fertige Ergebnisse mit save_research ab und prüfe vorher mit find_research, ob es schon etwas gibt.`,
+Lege fertige Ergebnisse mit save_research ab und prüfe vorher mit find_research, ob es schon etwas gibt.
+Fotos: Sieh sie dir mit view_upload an, beschreibe markante Merkmale (Gebäude, Schilder, Logos, Landschaft) und suche danach im Web.
+Ist reverse_image_search verfügbar, nutze es zusätzlich. Sag ehrlich, wie sicher die Zuordnung ist.
+Reisen/Hotels: Finde Unterkunft, Verfügbarkeit und Preise für die genannten Daten (direkt beim Hotel und über Portale),
+baue vorausgefüllte Links und lege die Buchung mit request_booking zur Freigabe vor. Fehlen Daten oder Personenzahl, frag nach.
+Du buchst nie selbst und gibst nie Zahlungsdaten ein. Eine Anfrage per Mail ans Hotel erledigt der Communication-Agent.`,
     server: "research",
     extraTools: ["WebSearch", "WebFetch"],
   },
@@ -140,7 +146,10 @@ Deine Aufgabe:
 - Speichere Präferenzen nur, wenn die Person sie ausdrücklich nennt.
 - Kinder dürfen nur Familie, Einkaufsliste und Recherche nutzen.
 - Haushaltswissen (wo ist was, Passwörter für Gäste, Anleitungen) speicherst und findest du selbst mit den Notiz-Werkzeugen.
-- Hat die Person Dateien angehängt (upload_id), gib sie an den passenden Agenten: Rechnung zum Bezahlen → finance (process_upload_as_invoice), sonst document (process_upload bzw. archive_upload). Frag nach, wenn unklar ist, was damit passieren soll.
+- Hat die Person Dateien angehängt (upload_id), gib die upload_id an den passenden Agenten weiter – Fachagenten sehen die Datei nur über die upload_id:
+  Rechnung zum Bezahlen → finance (process_upload_as_invoice); Brief, Vertrag, Dokument → document (process_upload/archive_upload);
+  „Was/wo ist das?“, Hotel oder Ort erkennen, Reise → research (view_upload); Produkt finden/kaufen → shopping (view_upload).
+  Frag nach, wenn unklar ist, was damit passieren soll.
 
 ${SAFETY}`;
   }
@@ -161,13 +170,13 @@ ${SAFETY}`;
     const as = (t: unknown[]) => t as AnyTool[];
     const all: Record<string, AnyTool[]> = {
       finance: as(financeTools(ctx)),
-      documents: as(documentTools(ctx)),
-      shopping: as(shoppingTools(ctx)),
+      documents: as([...documentTools(ctx), viewUploadTool(ctx)]),
+      shopping: as([...shoppingTools(ctx), viewUploadTool(ctx), reverseImageSearchTool(ctx)]),
       mail: as(mailTools(ctx, "private", "communication")),
       household: as(householdTools(ctx)),
       family: as(familyTools(ctx)),
       business: as([...mailTools(ctx, "business", "business"), ...githubTools(ctx)]),
-      research: as(researchTools(ctx)),
+      research: as([...researchTools(ctx), viewUploadTool(ctx), reverseImageSearchTool(ctx), bookingTool(ctx)]),
       master: as([...memoryTools(ctx), ...noteTools(ctx)]),
     };
     // Kinder bekommen die übrigen Werkzeuge gar nicht erst zu sehen.

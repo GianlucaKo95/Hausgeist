@@ -20,7 +20,10 @@ export interface ToolContext {
   user: AppUser;
 }
 
-export type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
+export type ToolResult = {
+  content: ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: string })[];
+  isError?: boolean;
+};
 
 export function ok(data: unknown): ToolResult {
   return { content: [{ type: "text", text: typeof data === "string" ? data : JSON.stringify(data, null, 2) }] };

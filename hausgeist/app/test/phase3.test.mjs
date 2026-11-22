@@ -52,3 +52,15 @@ test("Kalender: Dubletten-Schlüssel und Zeitraum", () => {
   const evs = parseEvents(ics, "Abfall").filter((e) => inRange(e, "2026-11-22T00:00:00Z", "2026-11-30T00:00:00Z"));
   assert.deepEqual(evs.map((e) => e.title), ["Papiertonne"]);
 });
+
+import { canApproveAction } from "../dist/core/checks.js";
+import { viewUploadTool, reverseImageSearchTool, bookingTool } from "../dist/tools/media.js";
+
+test("Buchungen: Limit wie bei Bestellungen", () => {
+  const adult = { id: "b", name: "A", role: "adult", approval_limit_cents: 50000, ha_user_id: null, notify_service: "n" };
+  assert.equal(canApproveAction(adult, { kind: "booking", amount_cents: 40000 }).allowed, true);
+  assert.equal(canApproveAction(adult, { kind: "booking", amount_cents: 90000 }).allowed, false);
+  const ctx = { config: { serpapi_key: "" }, user: adult };
+  assert.deepEqual([viewUploadTool(ctx), reverseImageSearchTool(ctx), bookingTool(ctx)].map((t) => t.name),
+    ["view_upload", "reverse_image_search", "request_booking"]);
+});

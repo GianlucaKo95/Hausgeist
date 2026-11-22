@@ -1,13 +1,14 @@
 name: Hausgeist
 options:
   bundleIdPrefix: de.koeven
+  developmentLanguage: de
   deploymentTarget:
     iOS: "17.0"
   createIntermediateGroups: true
 settings:
   base:
     SWIFT_VERSION: "5.10"
-    MARKETING_VERSION: "0.4.0"
+    MARKETING_VERSION: "0.5.0"
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: ""          # in Xcode unter Signing & Capabilities setzen
 targets:
@@ -41,3 +42,6 @@ targets:
               NSExceptionAllowsInsecureHTTPLoads: true
         NSLocalNetworkUsageDescription: Hausgeist verbindet sich mit deinem Home-Assistant-Server.
         NSCameraUsageDescription: Zum Scannen von Briefen, Rechnungen und Verträgen.
+        NSMicrophoneUsageDescription: Damit du mit dem Hausgeist sprechen kannst.
+        NSSpeechRecognitionUsageDescription: Deine Sprache wird in Text umgewandelt – wenn möglich direkt auf dem iPhone.
+        CFBundleDevelopmentRegion: de
