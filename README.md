@@ -80,6 +80,9 @@ energy:
   house_power: sensor.hausverbrauch
 github_token: <fine-grained Token, Issues lesen/schreiben>
 serpapi_key: ""               # optional: Bildersuche (Google Lens) über serpapi.com
+apns_key_id: ABC123DEFG       # Push direkt über die Hausgeist-App (siehe unten)
+apns_team_id: <Team-ID>
+apns_key: "<Inhalt der .p8-Datei, Zeilenumbrüche egal>"
 daily_brief: "07:30"
 mail_triage: true             # Mail-Überblick morgens
 weekly_offers: true           # Prospekt-Angebote montags
@@ -87,6 +90,12 @@ log_level: info
 ```
 
 4. **Chat öffnen:** In der Seitenleiste erscheint **Hausgeist**. Die Person wird über ihren HA-Benutzer erkannt, `users.ha_user_id` muss also gesetzt sein.
+
+## Push über die Hausgeist-App
+
+Ist APNs konfiguriert, gehen alle Mitteilungen (Freigaben, Erinnerungen, Briefing, Alarme) direkt an die Hausgeist-App. Freigeben und Ablehnen geht direkt in der Mitteilung, nur bei entsperrtem iPhone. Wer die App (noch) nicht hat, bekommt Mitteilungen weiter über `notify_service` aus Home Assistant, falls einer eingetragen ist.
+
+Einmalig: *developer.apple.com → Certificates, IDs & Profiles → Keys → +*, „Apple Push Notifications service (APNs)“ anhaken, Schlüssel herunterladen. Dann Key-ID, Team-ID und den Inhalt der `.p8`-Datei in die Add-on-Konfiguration eintragen. Ein APNs-Schlüssel gilt für alle Apps des Teams.
 
 ## iOS-App
 

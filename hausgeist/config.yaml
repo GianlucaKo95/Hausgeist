@@ -1,5 +1,5 @@
 name: Hausgeist
-version: "0.6.0"
+version: "0.7.0"
 slug: hausgeist
 description: Persönliches Agenten-Netzwerk mit Master-Agent und acht Fachagenten
 url: https://github.com/GianlucaKo95/hausgeist
@@ -39,6 +39,10 @@ options:
   energy: {}
   github_token: ""
   serpapi_key: ""
+  apns_key_id: ""
+  apns_team_id: ""
+  apns_key: ""
+  apns_bundle_id: de.koeven.hausgeist
   daily_brief: "07:30"
   mail_triage: true
   weekly_offers: true
@@ -87,6 +91,10 @@ schema:
     house_power: str?
   github_token: password
   serpapi_key: password
+  apns_key_id: str
+  apns_team_id: str
+  apns_key: password
+  apns_bundle_id: str
   daily_brief: str?
   mail_triage: bool
   weekly_offers: bool

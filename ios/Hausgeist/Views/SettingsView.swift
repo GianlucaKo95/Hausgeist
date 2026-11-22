@@ -41,7 +41,12 @@ struct SettingsView: View {
                     Text("Im Gesprächsmodus (Wellen-Symbol im Chat) liest der Hausgeist immer vor. Mit Siri: „Hey Siri, frag Hausgeist“ – auch im Auto über CarPlay.")
                 }
                 Section {
-                    Button("Abmelden", role: .destructive) { Task { await auth.signOut() } }
+                    Button("Abmelden", role: .destructive) {
+                        Task {
+                            await PushRegistration.unregister(auth: auth)
+                            await auth.signOut()
+                        }
+                    }
                 }
             }
             .navigationTitle("Einstellungen")
@@ -70,6 +75,7 @@ struct SettingsView: View {
             let me = try await APIClient(auth: auth).me()
             status = "Verbunden als \(me.name)"
             onConnected(me)
+            await PushRegistration.uploadStored()
         } catch {
             status = error.localizedDescription
         }

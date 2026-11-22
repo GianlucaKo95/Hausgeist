@@ -70,8 +70,9 @@ export function familyTools(ctx: ToolContext) {
       person: z.string().describe("Name laut Nutzerliste"),
       message: z.string(),
     }, safe(async (a) => {
-      const { data } = await db().from("users").select("name, notify_service").ilike("name", a.person).maybeSingle();
-      if (!data?.notify_service) throw new Error(`${a.person} hat keinen Benachrichtigungsdienst`);
+      const { listUsers } = await import("../core/db.js");
+      const data = (await listUsers()).find((u) => u.name.toLowerCase() === a.person.trim().toLowerCase());
+      if (!data?.notify_service) throw new Error(`${a.person} ist nicht erreichbar (keine App und kein Benachrichtigungsdienst)`);
       await ctx.ha.notify(data.notify_service, `Erinnerung von ${ctx.user.name}`, a.message);
       return ok(`Erinnerung an ${data.name} geschickt`);
     })),

@@ -46,6 +46,10 @@ const Options = z.object({
   energy: Energy.default({}),
   github_token: z.string().default(""),
   serpapi_key: z.string().default(""),
+  apns_key_id: z.string().default(""),
+  apns_team_id: z.string().default(""),
+  apns_key: z.string().default(""),
+  apns_bundle_id: z.string().default("de.koeven.hausgeist"),
   daily_brief: z
     .string()
     .regex(/^(([01]\d|2[0-3]):[0-5]\d)?$/, "daily_brief im Format HH:MM")

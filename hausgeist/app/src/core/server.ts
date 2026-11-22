@@ -89,7 +89,7 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
         res.end(CHAT_PAGE);
         return;
       }
-      if (path.endsWith("/api/health")) return json(res, 200, { ok: true, version: "0.6.0" });
+      if (path.endsWith("/api/health")) return json(res, 200, { ok: true, version: "0.7.0" });
 
       const user = await resolveUser(req);
       if (!user) return json(res, 401, { error: "Nicht angemeldet oder nicht als Haushaltsmitglied eingetragen." });
@@ -159,6 +159,35 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
           });
         }
         return json(res, 200, { payments, actions: actionList });
+      }
+
+      // ── Geräte für Push-Nachrichten ──
+      if (path.endsWith("/api/devices") && (req.method === "POST" || req.method === "DELETE")) {
+        const body = await readBody(req);
+        const token = String(body.token ?? "");
+        if (!/^[0-9a-f]{64,200}$/i.test(token)) return json(res, 400, { error: "Ungültiges Geräte-Token" });
+        if (req.method === "DELETE") {
+          await db().from("push_devices").delete().eq("token", token).eq("user_id", user.id);
+          return json(res, 200, { ok: true });
+        }
+        const environment = body.environment === "sandbox" ? "sandbox" : "production";
+        const { error } = await db().from("push_devices").upsert(
+          { token, environment, user_id: user.id, platform: "ios", updated_at: new Date().toISOString() },
+          { onConflict: "token" },
+        );
+        if (error) throw error;
+        return json(res, 200, { ok: true });
+      }
+
+      // ── Knopf direkt in der Mitteilung (Freigeben/Ablehnen) ──
+      if (req.method === "POST" && path.endsWith("/api/push-action")) {
+        const body = await readBody(req);
+        const action = String(body.action ?? "");
+        const pm = action.match(/^(HG_APPROVE|HG_REJECT|HG_ACT_OK|HG_ACT_NO):([0-9a-f-]{36})$/);
+        if (!pm) return json(res, 400, { error: "Unbekannte Aktion" });
+        const approve = pm[1] === "HG_APPROVE" || pm[1] === "HG_ACT_OK";
+        const r = pm[1].startsWith("HG_ACT") ? await actions.decide(user, pm[2], approve) : await finance.decide(user, pm[2], approve);
+        return json(res, r.ok ? 200 : 409, r);
       }
 
       const m = path.match(/\/api\/approvals\/(payment|action)\/([0-9a-f-]{36})$/);

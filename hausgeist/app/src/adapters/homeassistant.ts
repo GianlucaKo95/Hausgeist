@@ -10,8 +10,17 @@ export interface NotificationAction {
   destructive?: boolean;
 }
 
+type AppSender = (userId: string, title: string, message: string, actions: NotificationAction[], tag?: string) => Promise<boolean>;
+
 export class HomeAssistant {
+  private appSender: AppSender | null = null;
+
   constructor(private readonly config: Config) {}
+
+  /** Push über die Hausgeist-App statt über die Companion-App. */
+  setAppSender(sender: AppSender): void {
+    this.appSender = sender;
+  }
 
   private headers() {
     if (!this.config.supervisorToken) throw new Error("SUPERVISOR_TOKEN fehlt – läuft das Add-on mit homeassistant_api: true?");
@@ -20,6 +29,12 @@ export class HomeAssistant {
 
   /** Push an die Companion-App, optional mit Buttons (actionable notification). */
   async notify(service: string, title: string, message: string, actions: NotificationAction[] = [], tag?: string) {
+    if (service.startsWith("app:")) {
+      const [app, fallback] = service.split("|");
+      if (this.appSender && (await this.appSender(app.slice(4), title, message, actions, tag))) return;
+      if (!fallback) throw new Error("Push an die Hausgeist-App fehlgeschlagen und kein HA-Dienst hinterlegt");
+      service = fallback;
+    }
     const res = await fetch(`${this.config.haBaseUrl}/services/notify/${service}`, {
       method: "POST",
       headers: this.headers(),

@@ -1,5 +1,6 @@
 import { loadConfig } from "./core/config.js";
-import { db } from "./core/db.js";
+import { db, enableAppPush } from "./core/db.js";
+import { ApnsClient } from "./adapters/apns.js";
 import { logger, setLogLevel } from "./core/log.js";
 import { ActionService } from "./core/actions.js";
 import { startServer } from "./core/server.js";
@@ -28,6 +29,12 @@ async function main() {
   if (error) throw new Error(`Supabase nicht erreichbar oder Schema fehlt: ${error.message}`);
 
   const ha = new HomeAssistant(config);
+  const apns = new ApnsClient(config);
+  if (apns.enabled) {
+    enableAppPush(true);
+    ha.setAppSender((userId, title, message, acts, tag) => apns.notifyUser(userId, title, message, acts, tag));
+    log.info("Push über die Hausgeist-App aktiv");
+  }
   const apple = new AppleCalendar(config);
   const paperless = new Paperless(config);
   const actions = new ActionService(config, ha, apple);

@@ -61,6 +61,14 @@ final class AuthService {
 
     /// Gültiges Access-Token, bei Bedarf erneuert.
     func validAccessToken(forceRefresh: Bool = false) async throws -> String {
+        // App, Siri und Mitteilungs-Knöpfe teilen sich das Login. Hat ein anderer Teil
+        // die Sitzung schon erneuert, die neuere nehmen – ein alter Refresh-Token würde
+        // sonst von Supabase als Wiederverwendung erkannt und die Sitzung beendet.
+        if !AppConfig.isDemo, let data = Keychain.load(keychainKey),
+           let stored = try? JSONDecoder().decode(AuthSession.self, from: data),
+           stored.expiresAt > (session?.expiresAt ?? .distantPast) {
+            session = stored
+        }
         guard let s = session else { throw AuthError.server("Nicht angemeldet") }
         if !forceRefresh && s.expiresAt.timeIntervalSinceNow > 60 { return s.accessToken }
         do {

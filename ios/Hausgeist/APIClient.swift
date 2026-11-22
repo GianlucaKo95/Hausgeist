@@ -86,6 +86,21 @@ struct APIClient {
         let _: R = try await request("api/reset", method: "POST", body: [String: String]())
     }
 
+    func registerDevice(token: String, environment: String) async throws {
+        struct R: Decodable { let ok: Bool }
+        let _: R = try await request("api/devices", method: "POST", body: ["token": token, "environment": environment])
+    }
+
+    func unregisterDevice(token: String) async throws {
+        struct R: Decodable { let ok: Bool }
+        let _: R = try await request("api/devices", method: "DELETE", body: ["token": token])
+    }
+
+    /// Freigeben/Ablehnen direkt aus der Mitteilung.
+    func pushAction(_ action: String) async throws -> DecisionResult {
+        try await request("api/push-action", method: "POST", body: ["action": action])
+    }
+
     func approvals() async throws -> ApprovalList {
         if AppConfig.isDemo { return DemoData.approvals }
         return try await request("api/approvals")

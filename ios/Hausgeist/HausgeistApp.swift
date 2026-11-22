@@ -1,7 +1,9 @@
 import SwiftUI
+import Combine
 
 @main
 struct HausgeistApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var auth = AuthService()
 
     var body: some Scene {
@@ -39,7 +41,13 @@ struct RootView: View {
                 .tabItem { Label("Einstellungen", systemImage: "gearshape") }
                 .tag("settings")
         }
-        .task { await loadMe() }
+        .task {
+            await loadMe()
+            await PushRegistration.requestAndRegister()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .hgOpenApprovals)) { _ in
+            tab = "approvals"
+        }
     }
 
     private func loadMe() async {

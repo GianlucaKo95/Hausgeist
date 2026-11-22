@@ -64,3 +64,23 @@ test("Buchungen: Limit wie bei Bestellungen", () => {
   assert.deepEqual([viewUploadTool(ctx), reverseImageSearchTool(ctx), bookingTool(ctx)].map((t) => t.name),
     ["view_upload", "reverse_image_search", "request_booking"]);
 });
+
+import { generateKeyPairSync, createPublicKey, verify } from "node:crypto";
+import { normalizeP8, ApnsClient } from "../dist/adapters/apns.js";
+
+test("APNs: Schlüssel einlesen und Token signieren", () => {
+  const { privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const pem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  // Wie aus einem einzeiligen HA-Feld: Umbrüche als \n oder Leerzeichen
+  for (const raw of [pem, pem.replace(/\n/g, "\\n"), pem.replace(/\n/g, " ")]) {
+    assert.match(normalizeP8(raw), /^-----BEGIN PRIVATE KEY-----\n[A-Za-z0-9+/=\n]+\n-----END PRIVATE KEY-----\n$/);
+  }
+  const client = new ApnsClient({ apns_key_id: "ABC123DEFG", apns_team_id: "TEAM123456", apns_key: pem.replace(/\n/g, " "), apns_bundle_id: "de.koeven.hausgeist" });
+  assert.equal(client.enabled, true);
+  const jwt = client.token();
+  const [h, c, s] = jwt.split(".");
+  assert.equal(JSON.parse(Buffer.from(h, "base64url")).kid, "ABC123DEFG");
+  assert.equal(JSON.parse(Buffer.from(c, "base64url")).iss, "TEAM123456");
+  const ok = verify("sha256", Buffer.from(`${h}.${c}`), { key: createPublicKey(privateKey), dsaEncoding: "ieee-p1363" }, Buffer.from(s, "base64url"));
+  assert.equal(ok, true);
+});
