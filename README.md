@@ -7,6 +7,7 @@ Persönliches Agenten-Netzwerk als Home-Assistant-Add-on: ein **Master-Agent** n
 **Ereignisgesteuert und zeitgesteuert (ohne Chat)**
 - **Posteingang:** PDFs aus Mails und Fotos/Scans/PDFs aus der App werden eingeordnet. Bei einer **Rechnung** wird die Zahlung geprüft und zur Freigabe vorgelegt. Ein **Vertrag** wird erfasst, die Kündigungsfrist eingetragen und gemeldet. Ein **Termin** wird zur Übernahme in den Kalender vorgeschlagen. Alles andere geht nach Paperless. Kalendereinladungen (.ics) werden ebenfalls vorgeschlagen.
 - **Zahlungen:** Ausgeführt wird erst nach Freigabe. Bis die FinTS-Registrierung da ist, läuft alles im **Testmodus**, es fließt kein Geld.
+- **Kalender vorausdenken:** Morgens und abends (Standard 18:00) liest der Family-Agent die nächsten 8 Tage aus allen Kalendern und leitet Vorbereitungen ab. Ein paar Beispiele: Morgen ist Papiermüll, also kommt um 19 Uhr die Erinnerung, die blaue Tonne rauszustellen. Bei einem Geburtstag kommt 5 Tage vorher der Hinweis aufs Geschenk. Vor einem Arzttermin erinnert er am Vorabend an die Versichertenkarte. Präferenzen wie „Nelio bringt den Papiermüll raus“ oder „Müll-Erinnerung um 20 Uhr“ werden beachtet. Jede Erinnerung kommt nur einmal.
 - **Routinen:** Erinnerungen zu Zeitpunkten (auch wiederkehrend) und geplante Geräteschaltungen. Gerätealarme mit Wenn-dann-Regeln werden jede Minute geprüft. Morgens gibt es das Tagesbriefing (Fristen, Aufgaben, offene Freigaben) und einen Mail-Überblick, wiederkehrende Einkäufe kommen automatisch auf die Liste. Preisalarme werden täglich geprüft, montags kommen Prospekt-Angebote. Offene Freigaben werden nach 24 Stunden erneut gemeldet und verfallen nach 7 Tagen.
 
 **Auf Anfrage (Chat in der HA-Seitenleiste oder über die API)**
@@ -52,6 +53,16 @@ mailboxes:
     from_name: Gianluca Köhni
 icloud_user: <Apple-ID>
 icloud_app_password: <app-spezifisches Passwort von appleid.apple.com>
+calendar_feeds:               # abonnierte Kalender (ICS), z. B. Abfuhrkalender der Wirtschaftsbetriebe Duisburg
+  - name: Abfall
+    url: https://…/abfuhrkalender.ics
+    owner: shared
+ha_calendars:                 # Kalender aus Home Assistant, z. B. Waste Collection Schedule
+  - name: Müll
+    entity_id: calendar.abfall
+    owner: shared
+calendar_insights: true       # aus Terminen Vorbereitungen ableiten
+evening_check: "18:00"
 calendars:                    # Besitzer je Kalender: Name aus public.users oder "shared"
   - name: Familie
     owner: shared

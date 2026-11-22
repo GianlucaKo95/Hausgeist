@@ -15,6 +15,8 @@ const Mailbox = z.object({
 });
 
 const Calendar = z.object({ name: z.string(), owner: z.string() });
+const CalendarFeed = z.object({ name: z.string(), url: z.string(), owner: z.string().default("shared") });
+const HaCalendar = z.object({ name: z.string(), entity_id: z.string().regex(/^calendar\.[a-z0-9_]+$/), owner: z.string().default("shared") });
 
 const Energy = z.object({
   pv_power: z.string().optional(),
@@ -36,6 +38,10 @@ const Options = z.object({
   icloud_user: z.string().default(""),
   icloud_app_password: z.string().default(""),
   calendars: z.array(Calendar).default([]),
+  calendar_feeds: z.array(CalendarFeed).default([]),
+  ha_calendars: z.array(HaCalendar).default([]),
+  calendar_insights: z.boolean().default(true),
+  evening_check: z.string().regex(/^(([01]\d|2[0-3]):[0-5]\d)?$/, "evening_check im Format HH:MM").default("18:00"),
   ha_entities: z.array(z.string()).default([]),
   energy: Energy.default({}),
   github_token: z.string().default(""),

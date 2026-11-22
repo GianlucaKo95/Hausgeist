@@ -1,7 +1,7 @@
 import type { Config, MailboxConfig } from "../core/config.js";
 import type { AppUser } from "../core/checks.js";
 import type { HomeAssistant } from "../adapters/homeassistant.js";
-import type { AppleCalendar } from "../adapters/calendar.js";
+import type { CalendarHub } from "../adapters/calendar.js";
 import type { Paperless } from "../adapters/paperless.js";
 import type { ActionService } from "../core/actions.js";
 import type { FinanceAgent } from "../agents/finance.js";
@@ -11,7 +11,7 @@ import { db } from "../core/db.js";
 export interface ToolContext {
   config: Config;
   ha: HomeAssistant;
-  calendar: AppleCalendar;
+  calendar: CalendarHub;
   paperless: Paperless;
   actions: ActionService;
   finance: FinanceAgent;

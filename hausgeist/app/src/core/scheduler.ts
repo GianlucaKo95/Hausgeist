@@ -5,6 +5,8 @@ import type { HomeAssistant } from "../adapters/homeassistant.js";
 import type { ToolContext } from "../tools/context.js";
 import { mailTools } from "../tools/mail.js";
 import { runMiniAgent, parseJsonObject } from "./mini-agent.js";
+import { planCalendarReminders } from "./calendar-insights.js";
+import Anthropic from "@anthropic-ai/sdk";
 import { ACTION_APPROVE, ACTION_REJECT } from "../agents/finance.js";
 import { ACTION_OK, ACTION_NO } from "./actions.js";
 import { logger } from "./log.js";
@@ -64,16 +66,19 @@ export class Routines {
   private lastDaily: Record<string, string> = {};
   private lastHour = -1;
   private lastAlertCheck = 0;
+  private readonly llm: Anthropic;
 
   constructor(
     private readonly config: Config,
     private readonly ha: HomeAssistant,
     private readonly base: Omit<ToolContext, "user">,
-  ) {}
+  ) {
+    this.llm = new Anthropic({ apiKey: config.anthropic_api_key });
+  }
 
   start(): void {
     setInterval(() => void this.tick(), 30_000);
-    log.info(`Routinen aktiv (Briefing ${this.config.daily_brief || "aus"}, Mail-Überblick ${this.config.mail_triage ? "an" : "aus"}, Wochenangebote ${this.config.weekly_offers ? "an" : "aus"})`);
+    log.info(`Routinen aktiv (Briefing ${this.config.daily_brief || "aus"}, Kalender-Vorausdenken ${this.config.calendar_insights ? `morgens + ${this.config.evening_check}` : "aus"}, Mail-Überblick ${this.config.mail_triage ? "an" : "aus"}, Wochenangebote ${this.config.weekly_offers ? "an" : "aus"})`);
   }
 
   /** Führt eine Routine höchstens einmal gleichzeitig aus und protokolliert Fehler. */
@@ -102,6 +107,10 @@ export class Routines {
       this.run("wiederkehrend", () => this.recurringItems(now.date));
       if (this.config.mail_triage) this.run("mail", () => this.mailTriage());
       if (this.config.weekly_offers && now.weekday === 1) this.run("angebote", () => this.weeklyOffers());
+      if (this.config.calendar_insights) this.run("kalender", () => this.calendarInsights());
+    }
+    if (this.config.calendar_insights && this.config.evening_check && now.time >= this.config.evening_check && this.once("abend", now.date)) {
+      this.run("kalender", () => this.calendarInsights());
     }
     if (now.time >= "06:30" && this.once("preise", now.date)) this.run("preise", () => this.priceWatches());
     if (now.hour !== this.lastHour) {
@@ -200,6 +209,11 @@ export class Routines {
     }
   }
 
+  // ── Kalender vorausdenken ────────────────────────────────────────────────
+  private async calendarInsights(): Promise<void> {
+    await planCalendarReminders(this.config, this.base.calendar, this.llm);
+  }
+
   // ── Tagesbriefing ────────────────────────────────────────────────────────
   private async brief(today: string): Promise<void> {
     const remindDays = [30, 14, 7, 1, 0];
@@ -210,6 +224,17 @@ export class Routines {
       db().from("actions").select("summary").eq("status", "pending"),
       listUsers(),
     ]);
+    // Heutige Termine aus allen Kalendern
+    let todays: { title: string; start: string; allDay: boolean; calendar: string }[] = [];
+    try {
+      if (this.base.calendar.enabled) {
+        const from = new Date(`${today}T00:00:00`);
+        const to = new Date(from.getTime() + 86_400_000);
+        todays = await this.base.calendar.events(from.toISOString(), to.toISOString());
+      }
+    } catch (e) {
+      log.warn("Kalender für das Briefing nicht lesbar", e);
+    }
     const due = (deadlines ?? []).filter((d) => {
       const days = Math.round((Date.parse(d.due_date) - Date.parse(today)) / 86_400_000);
       return remindDays.includes(days) || days < 0;
@@ -225,6 +250,12 @@ export class Routines {
         const pays = approvals ?? [];
         if (pays.length) lines.push(`💶 ${pays.length} Zahlung(en) warten auf Freigabe (${formatEuro(pays.reduce((s, a) => s + a.amount_cents, 0))})`);
         if ((actions ?? []).length) lines.push(`✋ ${(actions ?? []).length} weitere Freigabe(n) offen`);
+      }
+      for (const ev of todays) {
+        const owner = this.base.calendar.ownerOf(ev.calendar);
+        if (owner && owner !== "shared" && owner.toLowerCase() !== u.name.toLowerCase()) continue;
+        const time = ev.allDay ? "ganztägig" : new Date(ev.start).toLocaleTimeString("de-DE", { timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit" });
+        lines.push(`🗓️ ${time}: ${ev.title}`);
       }
       for (const c of (chores ?? []).filter((c) => !c.assignee_id || c.assignee_id === u.id)) lines.push(`🧹 Fällig: ${c.title}`);
       if (lines.length) await this.ha.notify(u.notify_service, "Hausgeist – heute", lines.join("\n"));

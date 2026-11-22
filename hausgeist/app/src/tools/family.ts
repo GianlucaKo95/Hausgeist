@@ -5,14 +5,12 @@ import { ok, safe, findUser, type ToolContext } from "./context.js";
 
 export function familyTools(ctx: ToolContext) {
   /** Wem gehört ein Kalender laut Konfiguration? "shared" = Familienkalender. */
-  const ownerOf = (calendar: string) =>
-    ctx.config.calendars.find((c) => c.name.toLowerCase() === calendar.toLowerCase())?.owner ?? null;
+  const ownerOf = (calendar: string) => ctx.calendar.ownerOf(calendar);
 
   return [
-    tool("list_calendars", "Verfügbare Apple-Kalender und wem sie gehören.", {}, safe(async () => {
-      if (!ctx.calendar.enabled) return ok("Apple-Kalender ist nicht konfiguriert (icloud_user / icloud_app_password).");
-      const names = await ctx.calendar.listCalendars();
-      return ok(names.map((n) => ({ name: n, owner: ownerOf(n) ?? "unbekannt" })));
+    tool("list_calendars", "Verfügbare Kalender (Apple, Abos wie Abfuhrkalender, Home Assistant), wem sie gehören und ob man eintragen kann.", {}, safe(async () => {
+      if (!ctx.calendar.enabled) return ok("Kein Kalender konfiguriert (icloud_*, calendar_feeds, ha_calendars).");
+      return ok(await ctx.calendar.listCalendars());
     })),
 
     tool("list_events", "Termine in einem Zeitraum.", {
@@ -20,7 +18,7 @@ export function familyTools(ctx: ToolContext) {
       to: z.string().describe("ISO-Datum/Zeit"),
       calendars: z.array(z.string()).optional(),
     }, safe(async (a) => {
-      if (!ctx.calendar.enabled) return ok("Apple-Kalender ist nicht konfiguriert.");
+      if (!ctx.calendar.enabled) return ok("Kein Kalender konfiguriert.");
       const from = new Date(a.from).toISOString(), to = new Date(a.to).toISOString();
       return ok(await ctx.calendar.events(from, to, a.calendars));
     })),
@@ -33,12 +31,12 @@ export function familyTools(ctx: ToolContext) {
       location: z.string().optional(),
       notes: z.string().optional(),
     }, safe(async (a) => {
-      if (!ctx.calendar.enabled) throw new Error("Apple-Kalender ist nicht konfiguriert");
+      if (!ctx.calendar.apple.enabled) throw new Error("Apple-Kalender ist nicht konfiguriert – eintragen geht nur dort");
       const owner = ownerOf(a.calendar);
       const mine = owner === "shared" || owner?.toLowerCase() === ctx.user.name.toLowerCase();
       const ev = { calendar: a.calendar, title: a.title, start: a.start, end: a.end, location: a.location ?? null, notes: a.notes ?? null };
       if (mine) {
-        await ctx.calendar.createEvent(a.calendar, ev);
+        await ctx.calendar.apple.createEvent(a.calendar, ev);
         return ok(`Termin „${a.title}“ eingetragen`);
       }
       const when = new Date(a.start).toLocaleString("de-DE", { timeZone: "Europe/Berlin", dateStyle: "short", timeStyle: "short" });

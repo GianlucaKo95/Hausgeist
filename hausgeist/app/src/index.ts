@@ -6,7 +6,7 @@ import { startServer } from "./core/server.js";
 import { Routines } from "./core/scheduler.js";
 import { initUploads } from "./core/uploads.js";
 import { HomeAssistant } from "./adapters/homeassistant.js";
-import { AppleCalendar } from "./adapters/calendar.js";
+import { AppleCalendar, CalendarHub } from "./adapters/calendar.js";
 import { Paperless } from "./adapters/paperless.js";
 import { DryRunProvider, FinTSProvider } from "./adapters/payment.js";
 import { CommunicationAgent } from "./agents/communication.js";
@@ -28,9 +28,10 @@ async function main() {
   if (error) throw new Error(`Supabase nicht erreichbar oder Schema fehlt: ${error.message}`);
 
   const ha = new HomeAssistant(config);
-  const calendar = new AppleCalendar(config);
+  const apple = new AppleCalendar(config);
   const paperless = new Paperless(config);
-  const actions = new ActionService(config, ha, calendar);
+  const actions = new ActionService(config, ha, apple);
+  const calendar = new CalendarHub(config, apple, ha);
 
   // Posteingang: Mails und Uploads → Rechnung, Vertrag, Termin oder Ablage
   const documents = new DocumentAgent(config);

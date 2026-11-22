@@ -1,5 +1,5 @@
 name: Hausgeist
-version: "0.4.0"
+version: "0.5.0"
 slug: hausgeist
 description: Persönliches Agenten-Netzwerk mit Master-Agent und acht Fachagenten
 url: https://github.com/GianlucaKo95/hausgeist
@@ -31,6 +31,10 @@ options:
   icloud_user: ""
   icloud_app_password: ""
   calendars: []
+  calendar_feeds: []
+  ha_calendars: []
+  calendar_insights: true
+  evening_check: "18:00"
   ha_entities: []
   energy: {}
   github_token: ""
@@ -62,6 +66,16 @@ schema:
   calendars:
     - name: str
       owner: str
+  calendar_feeds:
+    - name: str
+      url: str
+      owner: str?
+  ha_calendars:
+    - name: str
+      entity_id: str
+      owner: str?
+  calendar_insights: bool
+  evening_check: str?
   ha_entities:
     - str
   energy:

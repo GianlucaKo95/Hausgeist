@@ -57,6 +57,17 @@ export class HomeAssistant {
     return data[0] ?? [];
   }
 
+  /** Termine eines Home-Assistant-Kalenders (z. B. calendar.abfall). */
+  async calendarEvents(entityId: string, startIso: string, endIso: string): Promise<{
+    summary: string; location?: string | null;
+    start: { dateTime?: string; date?: string }; end?: { dateTime?: string; date?: string };
+  }[]> {
+    const q = `start=${encodeURIComponent(startIso)}&end=${encodeURIComponent(endIso)}`;
+    const res = await fetch(`${this.config.haBaseUrl}/calendars/${entityId}?${q}`, { headers: this.headers() });
+    if (!res.ok) throw new Error(`Kalender ${entityId}: ${res.status}`);
+    return res.json() as never;
+  }
+
   async callService(domain: string, service: string, data: Record<string, unknown>): Promise<void> {
     const res = await fetch(`${this.config.haBaseUrl}/services/${domain}/${service}`, {
       method: "POST",

@@ -41,3 +41,14 @@ test("Dokumentschema und Dateitypen", () => {
     appointment_title: null, appointment_start: null, appointment_end: null, appointment_location: null, summary: "Stromvertrag" });
   assert.equal(r.success, true);
 });
+
+import { sourceKey } from "../dist/core/calendar-insights.js";
+import { inRange, parseEvents } from "../dist/adapters/calendar.js";
+
+test("Kalender: Dubletten-Schlüssel und Zeitraum", () => {
+  assert.equal(sourceKey("2026-11-24 Papiermüll", "u1"), sourceKey(" 2026-11-24 papiermüll ", "u1"));
+  assert.notEqual(sourceKey("2026-11-24 papiermüll", "u1"), sourceKey("2026-11-24 papiermüll", "u2"));
+  const ics = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Papiertonne\r\nDTSTART;VALUE=DATE:20261124\r\nDTEND;VALUE=DATE:20261125\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nSUMMARY:Restmüll\r\nDTSTART;VALUE=DATE:20261208\r\nEND:VEVENT\r\nEND:VCALENDAR";
+  const evs = parseEvents(ics, "Abfall").filter((e) => inRange(e, "2026-11-22T00:00:00Z", "2026-11-30T00:00:00Z"));
+  assert.deepEqual(evs.map((e) => e.title), ["Papiertonne"]);
+});
