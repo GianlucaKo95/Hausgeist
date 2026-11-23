@@ -41,9 +41,23 @@ export class CommunicationAgent {
     this.statePath = join(config.dataDir, "imap-state.json");
   }
 
+  private generation = 0;
+  private clients = new Set<ImapFlow>();
+
   start(): void {
     if (this.config.mailboxes.length === 0) log.warn("Keine Postfächer konfiguriert");
-    for (const mb of this.config.mailboxes) void this.watch(mb, 1000);
+    const gen = this.generation;
+    for (const mb of this.config.mailboxes) void this.watch(mb, 1000, gen);
+  }
+
+  /** Nach Änderungen in der App: alle Verbindungen schließen und neu aufbauen. */
+  async restart(): Promise<void> {
+    this.generation++;
+    const old = [...this.clients];
+    this.clients.clear();
+    await Promise.all(old.map((c) => c.logout().catch(() => c.close())));
+    log.info("Postfächer neu geladen");
+    this.start();
   }
 
   private readState(): State {
@@ -54,7 +68,8 @@ export class CommunicationAgent {
     writeFileSync(this.statePath, JSON.stringify(state, null, 2));
   }
 
-  private async watch(mb: MailboxConfig, retryMs: number): Promise<void> {
+  private async watch(mb: MailboxConfig, retryMs: number, gen: number): Promise<void> {
+    if (gen !== this.generation) return;
     const client = new ImapFlow({
       host: mb.host,
       port: mb.port,
@@ -84,11 +99,14 @@ export class CommunicationAgent {
       }
     };
 
+    this.clients.add(client);
     client.on("exists", () => void poll());
     client.on("close", () => {
+      this.clients.delete(client);
+      if (gen !== this.generation) return; // bewusst beendet (Neuladen)
       const next = Math.min(retryMs * 2, 300_000);
       log.warn(`${mb.name}: Verbindung beendet, neuer Versuch in ${next / 1000}s`);
-      setTimeout(() => void this.watch(mb, next), next);
+      setTimeout(() => void this.watch(mb, next, gen), next);
     });
     client.on("error", (e: Error) => log.warn(`${mb.name}: IMAP-Fehler`, e));
 

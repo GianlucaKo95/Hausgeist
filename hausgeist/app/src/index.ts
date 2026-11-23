@@ -6,6 +6,7 @@ import { ActionService } from "./core/actions.js";
 import { startServer } from "./core/server.js";
 import { Routines } from "./core/scheduler.js";
 import { initUploads } from "./core/uploads.js";
+import { SettingsStore } from "./core/settings.js";
 import { HomeAssistant } from "./adapters/homeassistant.js";
 import { AppleCalendar, CalendarHub } from "./adapters/calendar.js";
 import { Paperless } from "./adapters/paperless.js";
@@ -61,7 +62,12 @@ async function main() {
   });
 
   communication.start();
-  startServer(config, master, finance, actions, ha);
+  const settings = new SettingsStore(config);
+  settings.onChange(async (changed) => {
+    if (changed.includes("mailboxes")) await communication.restart();
+    if (changed.includes("icloud_user") || changed.includes("icloud_app_password")) apple.reset();
+  });
+  startServer(config, master, finance, actions, ha, settings);
   routines.start();
 
   log.info(`Hausgeist läuft (Zahlungsmodus: ${payments.name})`);

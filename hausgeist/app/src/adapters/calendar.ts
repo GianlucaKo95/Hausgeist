@@ -72,6 +72,12 @@ export class AppleCalendar {
     return Boolean(this.config.icloud_user && this.config.icloud_app_password);
   }
 
+  /** Nach geänderten Zugangsdaten neu verbinden. */
+  reset(): void {
+    this.client = null;
+    this.calendars = [];
+  }
+
   private async connect(): Promise<DAVClient> {
     if (this.client) return this.client;
     const client = new DAVClient({
