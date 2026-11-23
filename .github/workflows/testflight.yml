@@ -63,6 +63,11 @@ jobs:
             CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
             | tee archive.log | grep -E "error:|ARCHIVE (SUCCEEDED|FAILED)" || true
           grep -q "ARCHIVE SUCCEEDED" archive.log
+          APP="$RUNNER_TEMP/Hausgeist.xcarchive/Products/Applications/Hausgeist.app"
+          echo "--- Signatur im Archiv"
+          codesign -dvv "$APP" 2>&1 | grep -E "Authority|Identifier|TeamIdentifier|Format" || true
+          codesign --verify --deep --strict --verbose=2 "$APP" 2>&1 | tail -5 || true
+          find "$APP" -name "*.dylib" -o -name "*.framework" -o -name "*.appex" | head -20
 
       - name: Zu TestFlight hochladen
         working-directory: ios
@@ -90,6 +95,7 @@ jobs:
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             | tee export.log | grep -E "error:|Upload succeeded|EXPORT (SUCCEEDED|FAILED)" || true
+          mkdir -p "$RUNNER_TEMP/distlogs" && cp -R "${TMPDIR:-/tmp}"/*.xcdistributionlogs "$RUNNER_TEMP/distlogs/" 2>/dev/null || true
           if ! grep -q "EXPORT SUCCEEDED" export.log; then
             if grep -q "Error Downloading App Information" export.log; then
               echo "::error::App Store Connect kennt die App noch nicht. Bitte unter appstoreconnect.apple.com → Apps → + → Neue App anlegen (Bundle-ID de.hausgeist.koeven) und den Workflow erneut starten."
@@ -98,6 +104,14 @@ jobs:
           fi
           echo "### Build ${{ github.run_number }} ist zu TestFlight hochgeladen" >> "$GITHUB_STEP_SUMMARY"
           echo "Nach der Verarbeitung (meist 5–15 Minuten) erscheint er in App Store Connect unter TestFlight." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verteilungsprotokolle sichern
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: distribution-logs
+          path: ${{ runner.temp }}/distlogs
+          if-no-files-found: ignore
 
       - name: Aufräumen
         if: always()
