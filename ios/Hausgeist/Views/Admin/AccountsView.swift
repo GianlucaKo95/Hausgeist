@@ -42,6 +42,7 @@ struct AccountsView: View {
                         }
                     }
                 }
+                .buttonStyle(.plain)
                 Button("Konto hinzufügen", systemImage: "plus") { creating = true }
             } header: {
                 Text("Eigene Konten")

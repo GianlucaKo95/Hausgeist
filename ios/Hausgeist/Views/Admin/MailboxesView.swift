@@ -50,6 +50,7 @@ struct MailboxesView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
+                .buttonStyle(.plain)
             }
         }
         .navigationTitle(me.role == "admin" ? "Postfächer" : "Meine Postfächer")

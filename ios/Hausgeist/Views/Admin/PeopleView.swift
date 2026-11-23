@@ -24,6 +24,7 @@ struct PeopleView: View {
                         }
                     }
                 }
+                .buttonStyle(.plain)
             } footer: {
                 Text("Wer sich in der App anmelden soll, braucht hier eine E-Mail-Adresse und ein Konto mit derselben Adresse in Supabase (Authentication → Users).")
             }
