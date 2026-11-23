@@ -92,7 +92,7 @@ jobs:
             | tee export.log | grep -E "error:|Upload succeeded|EXPORT (SUCCEEDED|FAILED)" || true
           if ! grep -q "EXPORT SUCCEEDED" export.log; then
             if grep -q "Error Downloading App Information" export.log; then
-              echo "::error::App Store Connect kennt die App noch nicht. Bitte unter appstoreconnect.apple.com → Apps → + → Neue App anlegen (Bundle-ID de.koeven.hausgeist) und den Workflow erneut starten."
+              echo "::error::App Store Connect kennt die App noch nicht. Bitte unter appstoreconnect.apple.com → Apps → + → Neue App anlegen (Bundle-ID de.Hausgeist.KoeVen) und den Workflow erneut starten."
             fi
             exit 1
           fi

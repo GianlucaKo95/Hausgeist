@@ -65,7 +65,7 @@ export const Options = z.object({
   apns_key_id: z.string().default(""),
   apns_team_id: z.string().default(""),
   apns_key: z.string().default(""),
-  apns_bundle_id: z.string().default("de.koeven.hausgeist"),
+  apns_bundle_id: z.string().default("de.Hausgeist.KoeVen"),
   daily_brief: z
     .string()
     .regex(/^(([01]\d|2[0-3]):[0-5]\d)?$/, "daily_brief im Format HH:MM")
