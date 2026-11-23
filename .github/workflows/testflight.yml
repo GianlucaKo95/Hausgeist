@@ -90,7 +90,12 @@ jobs:
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             | tee export.log | grep -E "error:|Upload succeeded|EXPORT (SUCCEEDED|FAILED)" || true
-          grep -q "EXPORT SUCCEEDED" export.log
+          if ! grep -q "EXPORT SUCCEEDED" export.log; then
+            if grep -q "Error Downloading App Information" export.log; then
+              echo "::error::App Store Connect kennt die App noch nicht. Bitte unter appstoreconnect.apple.com → Apps → + → Neue App anlegen (Bundle-ID de.koeven.hausgeist) und den Workflow erneut starten."
+            fi
+            exit 1
+          fi
           echo "### Build ${{ github.run_number }} ist zu TestFlight hochgeladen" >> "$GITHUB_STEP_SUMMARY"
           echo "Nach der Verarbeitung (meist 5–15 Minuten) erscheint er in App Store Connect unter TestFlight." >> "$GITHUB_STEP_SUMMARY"
 

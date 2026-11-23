@@ -45,6 +45,33 @@ struct AdminSettings: Codable {
     var paperless_url: String
     var paperless_token_set: Bool
     var push_enabled: Bool
+    // ab Server 0.9.0
+    var payment_mode: String?
+    var fints_product_id: String?
+    var banks: [BankLogin]?
+}
+
+struct BankLogin: Codable, Identifiable, Hashable {
+    var id: String { bank }
+    var bank: String
+    var name: String
+    var default_url: String
+    var login: String
+    var url: String
+    var pin_set: Bool
+}
+
+struct BankLoginSave: Encodable {
+    var login: String
+    var pin: String?
+    var url: String?
+    var fints_product_id: String?
+}
+
+struct BankTestResult: Decodable {
+    struct Account: Decodable, Hashable { let iban: String; let name: String? }
+    let accounts: [Account]
+    let tanMethods: [String]
 }
 
 /// Nur gesetzte Felder werden geschickt (JSONEncoder lässt nil weg).
@@ -63,6 +90,8 @@ struct SettingsPatch: Encodable {
     var calendar_insights: Bool?
     var paperless_url: String?
     var paperless_token: String?
+    var payment_mode: String?
+    var fints_product_id: String?
 }
 
 struct Mailbox: Codable, Identifiable, Hashable {
@@ -185,6 +214,23 @@ extension APIClient {
         return r.calendars
     }
 
+    func saveBankLogin(bank: String, _ b: BankLoginSave) async throws {
+        if AppConfig.isDemo { return }
+        let _: OK = try await request("api/admin/banks/\(bank)", method: "PUT", body: b)
+    }
+
+    func deleteBankLogin(bank: String) async throws {
+        if AppConfig.isDemo { return }
+        let _: OK = try await request("api/admin/banks/\(bank)", method: "DELETE")
+    }
+
+    func testBank(bank: String, _ b: BankLoginSave) async throws -> BankTestResult {
+        if AppConfig.isDemo {
+            return BankTestResult(accounts: [.init(iban: "DE02120300000000202051", name: "Girokonto")], tanMethods: ["DKB-App", "chipTAN"])
+        }
+        return try await request("api/admin/banks/\(bank)/test", method: "POST", body: b)
+    }
+
     func mailboxes() async throws -> [Mailbox] {
         if AppConfig.isDemo { return DemoAdmin.mailboxes }
         return try await request("api/admin/mailboxes")
@@ -293,5 +339,11 @@ enum DemoAdmin {
         ha_calendars: [], ha_entities: ["climate.*", "light.kueche", "switch.waschmaschine", "sensor.pv_leistung"],
         energy: EnergySensors(pv_power: "sensor.pv_leistung", battery_soc: "sensor.speicher_soc"),
         daily_brief: "07:30", evening_check: "18:00", mail_triage: true, weekly_offers: true, calendar_insights: true,
-        paperless_url: "", paperless_token_set: false, push_enabled: true)
+        paperless_url: "", paperless_token_set: false, push_enabled: true,
+        payment_mode: "dryrun", fints_product_id: "",
+        banks: [
+            BankLogin(bank: "sparkasse_duisburg", name: "Sparkasse Duisburg", default_url: "https://banking-rl4.s-fints-pt-rl.de/fints30", login: "gk1234", url: "", pin_set: true),
+            BankLogin(bank: "deutsche_bank", name: "Deutsche Bank", default_url: "https://fints.deutsche-bank.de/", login: "", url: "", pin_set: false),
+            BankLogin(bank: "dkb", name: "DKB", default_url: "https://fints.dkb.de/fints", login: "", url: "", pin_set: false),
+        ])
 }

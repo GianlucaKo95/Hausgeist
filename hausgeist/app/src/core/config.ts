@@ -18,6 +18,20 @@ const Calendar = z.object({ name: z.string(), owner: z.string() });
 const CalendarFeed = z.object({ name: z.string(), url: z.string(), owner: z.string().default("shared") });
 const HaCalendar = z.object({ name: z.string(), entity_id: z.string().regex(/^calendar\.[a-z0-9_]+$/), owner: z.string().default("shared") });
 
+export const BANKS = ["sparkasse_duisburg", "deutsche_bank", "dkb"] as const;
+export type BankKey = (typeof BANKS)[number];
+const BankLogin = z.object({
+  login: z.string().min(1),
+  pin: z.string().min(1),
+  url: z.string().url().optional(),
+});
+export type BankLoginConfig = z.infer<typeof BankLogin>;
+const BankLogins = z.object({
+  sparkasse_duisburg: BankLogin.optional(),
+  deutsche_bank: BankLogin.optional(),
+  dkb: BankLogin.optional(),
+});
+
 const Energy = z.object({
   pv_power: z.string().optional(),
   battery_soc: z.string().optional(),
@@ -34,6 +48,8 @@ export const Options = z.object({
   paperless_url: z.string().default(""),
   paperless_token: z.string().default(""),
   payment_mode: z.enum(["dryrun", "fints"]).default("dryrun"),
+  fints_product_id: z.string().default(""),
+  bank_logins: BankLogins.default({}),
   mailboxes: z.array(Mailbox).default([]),
   icloud_user: z.string().default(""),
   icloud_app_password: z.string().default(""),
@@ -71,6 +87,9 @@ export type Config = z.infer<typeof Options> & {
 /** Felder, die in der App gepflegt werden können – ohne Standardwerte, damit nur Gesendetes gilt. */
 const time = z.string().regex(/^(([01]\d|2[0-3]):[0-5]\d)?$/, "Uhrzeit im Format HH:MM");
 export const AppSettings = z.object({
+  payment_mode: z.enum(["dryrun", "fints"]),
+  fints_product_id: z.string(),
+  bank_logins: BankLogins,
   mailboxes: z.array(Mailbox),
   icloud_user: z.string(),
   icloud_app_password: z.string(),

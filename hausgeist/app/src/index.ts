@@ -10,7 +10,7 @@ import { SettingsStore } from "./core/settings.js";
 import { HomeAssistant } from "./adapters/homeassistant.js";
 import { AppleCalendar, CalendarHub } from "./adapters/calendar.js";
 import { Paperless } from "./adapters/paperless.js";
-import { DryRunProvider, FinTSProvider } from "./adapters/payment.js";
+import { DryRunProvider, FinTSProvider, SwitchingProvider } from "./adapters/payment.js";
 import { CommunicationAgent } from "./agents/communication.js";
 import { DocumentAgent } from "./agents/document.js";
 import { Executor } from "./agents/executor.js";
@@ -43,7 +43,8 @@ async function main() {
 
   // Posteingang: Mails und Uploads → Rechnung, Vertrag, Termin oder Ablage
   const documents = new DocumentAgent(config);
-  const payments = config.payment_mode === "fints" ? new FinTSProvider() : new DryRunProvider();
+  const fints = new FinTSProvider(config);
+  const payments = new SwitchingProvider(config, new DryRunProvider(), fints);
   const executor = new Executor(payments, ha, documents);
   const finance = new FinanceAgent(ha, executor);
   const intake = new IntakeAgent(config, ha, documents, finance, actions);
@@ -67,7 +68,7 @@ async function main() {
     if (changed.includes("mailboxes")) await communication.restart();
     if (changed.includes("icloud_user") || changed.includes("icloud_app_password")) apple.reset();
   });
-  startServer(config, master, finance, actions, ha, settings);
+  startServer(config, master, finance, actions, ha, settings, fints);
   routines.start();
 
   log.info(`Hausgeist läuft (Zahlungsmodus: ${payments.name})`);

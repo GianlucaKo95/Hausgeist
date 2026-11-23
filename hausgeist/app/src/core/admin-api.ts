@@ -2,10 +2,11 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { ImapFlow } from "imapflow";
 import nodemailer from "nodemailer";
 import { z } from "zod";
-import type { Config, MailboxConfig } from "./config.js";
+import { BANKS, type BankKey, type Config, type MailboxConfig } from "./config.js";
+import { BANK_INFO, blzFromIban, type FinTSProvider } from "../adapters/payment.js";
 import type { SettingsStore } from "./settings.js";
 import { isValidIban, normalizeIban, type AppUser } from "./checks.js";
-import { db, audit } from "./db.js";
+import { db, audit, listUsers } from "./db.js";
 import { AppleCalendar } from "../adapters/calendar.js";
 import type { HomeAssistant } from "../adapters/homeassistant.js";
 
@@ -16,6 +17,7 @@ export interface AdminDeps {
   config: Config;
   settings: SettingsStore;
   ha: HomeAssistant;
+  fints: FinTSProvider;
   json: Json;
   readBody: ReadBody;
 }
@@ -47,6 +49,14 @@ const SettingsBody = z.object({
   calendar_insights: z.boolean().optional(),
   paperless_url: z.string().optional(),
   paperless_token: z.string().optional(),
+  payment_mode: z.enum(["dryrun", "fints"]).optional(),
+  fints_product_id: z.string().max(40).optional(),
+});
+
+const BankLoginBody = z.object({
+  login: z.string().min(1).max(60),
+  pin: z.string().max(60).optional(),
+  url: z.string().url().or(z.literal("")).optional(),
 });
 
 const MailboxBody = z.object({
@@ -118,6 +128,12 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
         weekly_offers: config.weekly_offers, calendar_insights: config.calendar_insights,
         paperless_url: config.paperless_url, paperless_token_set: Boolean(config.paperless_token),
         push_enabled: Boolean(config.apns_key_id && config.apns_key),
+        payment_mode: config.payment_mode, fints_product_id: config.fints_product_id,
+        banks: BANKS.map((b) => ({
+          bank: b, name: BANK_INFO[b].name, default_url: BANK_INFO[b].url,
+          login: config.bank_logins[b]?.login ?? "", url: config.bank_logins[b]?.url ?? "",
+          pin_set: Boolean(config.bank_logins[b]?.pin),
+        })),
       });
       return true;
     }
@@ -127,6 +143,11 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
       // Leere Passwortfelder bedeuten „unverändert lassen“.
       if (body.icloud_app_password === "") delete body.icloud_app_password;
       if (body.paperless_token === "") delete body.paperless_token;
+      if (body.payment_mode === "fints") {
+        const productId = body.fints_product_id ?? config.fints_product_id;
+        if (!productId.trim()) throw new HttpError(400, "Für echte Überweisungen zuerst die FinTS-Produkt-ID eintragen.");
+        if (!BANKS.some((b) => config.bank_logins[b])) throw new HttpError(400, "Für echte Überweisungen zuerst einen Bankzugang hinterlegen.");
+      }
       await d.settings.update(body);
       await audit({ agent: "admin", action: "settings", level: 1, result: Object.keys(body).join(","), user_id: user.id });
       json(res, 200, { ok: true });
@@ -321,6 +342,64 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
     }
 
     // ── Home Assistant ───────────────────────────────────────────────────
+    // ── Bankzugänge (FinTS) ──────────────────────────────────────────────
+    const bankRoute = route.match(/^banks\/(sparkasse_duisburg|deutsche_bank|dkb)$/);
+    if (bankRoute && method === "PUT") {
+      requireAdmin(user);
+      const bank = bankRoute[1] as BankKey;
+      const body = BankLoginBody.parse(await d.readBody(req));
+      const pin = body.pin || config.bank_logins[bank]?.pin;
+      if (!pin) throw new HttpError(400, "Bitte die PIN eingeben.");
+      const next = { ...config.bank_logins, [bank]: { login: body.login, pin, ...(body.url ? { url: body.url } : {}) } };
+      await d.settings.update({ bank_logins: next });
+      await audit({ agent: "admin", action: "bank_login", level: 1, result: bank, user_id: user.id });
+      json(res, 200, { ok: true });
+      return true;
+    }
+    if (bankRoute && method === "DELETE") {
+      requireAdmin(user);
+      const bank = bankRoute[1] as BankKey;
+      const next = { ...config.bank_logins };
+      delete next[bank];
+      await d.settings.update({ bank_logins: next });
+      await audit({ agent: "admin", action: "bank_login_delete", level: 1, result: bank, user_id: user.id });
+      json(res, 200, { ok: true });
+      return true;
+    }
+    const bankTest = route.match(/^banks\/(sparkasse_duisburg|deutsche_bank|dkb)\/test$/);
+    if (bankTest && method === "POST") {
+      requireAdmin(user);
+      const bank = bankTest[1] as BankKey;
+      const body = BankLoginBody.extend({ blz: z.string().regex(/^\d{8}$/).optional(), fints_product_id: z.string().optional() })
+        .partial().parse(await d.readBody(req));
+      const saved = config.bank_logins[bank];
+      const login = body.login || saved?.login;
+      const pin = body.pin || saved?.pin;
+      if (!login || !pin) throw new HttpError(400, "Bitte Anmeldename und PIN eingeben.");
+      let blz = body.blz;
+      if (!blz) {
+        const { data: acc } = await db().from("accounts").select("iban").eq("bank", bank).limit(1);
+        if (acc?.[0]) blz = blzFromIban(acc[0].iban);
+      }
+      if (!blz) throw new HttpError(400, "Bitte zuerst ein Konto dieser Bank anlegen (für die Bankleitzahl).");
+      const productBefore = config.fints_product_id;
+      if (body.fints_product_id) config.fints_product_id = body.fints_product_id;
+      try {
+        const me = (await listUsers()).find((u) => u.id === user.id);
+        const result = await d.fints.test(bank, blz, { login, pin, url: body.url || saved?.url }, {
+          onBankApproval: async (text) => {
+            if (me?.notify_service) await d.ha.notify(me.notify_service, "Banking-App öffnen", `${BANK_INFO[bank].name}: ${text}`);
+          },
+        });
+        json(res, 200, result);
+      } catch (e) {
+        throw new HttpError(400, e instanceof Error ? e.message : String(e));
+      } finally {
+        config.fints_product_id = productBefore;
+      }
+      return true;
+    }
+
     if (route === "ha/entities" && method === "GET") {
       requireAdmin(user);
       const states = await d.ha.states();

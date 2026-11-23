@@ -27,7 +27,7 @@ export class Executor {
     }
     const { data: inv } = await db().from("invoices").select("id, issuer, status").eq("id", a.invoice_id).single();
     const { data: account } = a.account_id
-      ? await db().from("accounts").select("iban, label").eq("id", a.account_id).single()
+      ? await db().from("accounts").select("iban, label, bank, holder_id").eq("id", a.account_id).single()
       : { data: null };
 
     const notifyDecider = async (title: string, msg: string) => {
@@ -44,13 +44,19 @@ export class Executor {
     }
 
     await db().from("invoices").update({ status: "paying" }).eq("id", inv.id);
+    const holder = account.holder_id ? (await listUsers()).find((u) => u.id === account.holder_id) : undefined;
     const result = await this.payments.transfer({
+      bank: account.bank,
+      debtorName: holder?.name ?? account.label,
       fromIban: account.iban,
       toIban: a.iban,
       toName: inv.issuer,
       amountCents: a.amount_cents,
       reference: a.reference ?? "",
       endToEndId: randomUUID().replace(/-/g, "").slice(0, 35),
+    }, {
+      onBankApproval: (text) =>
+        notifyDecider("Bitte in der Banking-App freigeben", `${inv.issuer}: ${formatEuro(a.amount_cents)} von ${account.label}. ${text}`.trim()),
     });
 
     if (result.status === "dryrun") {
@@ -62,7 +68,7 @@ export class Executor {
       await db().from("invoices").update({ status: "paid" }).eq("id", inv.id);
       await notifyDecider(
         "Überweisung übermittelt",
-        `${inv.issuer}: ${formatEuro(a.amount_cents)} von ${account.label}.${result.needsBankApproval ? " Bitte in der Banking-App bestätigen." : ""}`,
+        `${inv.issuer}: ${formatEuro(a.amount_cents)} von ${account.label}.`,
       );
       await audit({ agent: "executor", action: "transfer", level: 2, result: "submitted", ref_table: "approvals", ref_id: approvalId, detail: result });
       await this.fileInvoice(inv.id, ["bezahlt"]);

@@ -47,8 +47,10 @@ struct AccountsView: View {
             } header: {
                 Text("Eigene Konten")
             } footer: {
-                Text("Aus diesen Konten schlägt der Hausgeist das passende Zahlerkonto vor. Überwiesen wird erst mit FinTS – bis dahin läuft alles im Testmodus.")
+                Text("Aus diesen Konten schlägt der Hausgeist das passende Zahlerkonto vor.")
             }
+
+            OnlineBankingSection()
 
             Section {
                 ForEach(payees) { p in
