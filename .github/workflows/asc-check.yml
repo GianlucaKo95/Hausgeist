@@ -1,0 +1,28 @@
+name: App Store Connect prüfen
+on: workflow_dispatch
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.APP_STORE_CONNECT_KEY_P8 }}
+      TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - run: pip install -q pyjwt cryptography requests
+      - shell: python
+        run: |
+          import os, time, jwt, requests
+          key = os.environ["ASC_KEY_P8"].replace("\\n", "\n")
+          tok = jwt.encode({"iss": os.environ["ASC_ISSUER_ID"], "iat": int(time.time()), "exp": int(time.time()) + 600, "aud": "appstoreconnect-v1"},
+                           key, algorithm="ES256", headers={"kid": os.environ["ASC_KEY_ID"]})
+          h = {"Authorization": f"Bearer {tok}"}
+          print("Team-ID-Secret endet auf:", os.environ["TEAM_ID"][-3:])
+          r = requests.get("https://api.appstoreconnect.apple.com/v1/bundleIds?limit=200&fields[bundleIds]=identifier,name,platform,seedId", headers=h).json()
+          print("== Bundle-IDs im Team")
+          for b in r.get("data", []): a = b["attributes"]; print(f'{a["identifier"]}  ({a["name"]}, {a["platform"]}, Team …{a["seedId"][-3:]})')
+          if "errors" in r: print(r["errors"])
+          r = requests.get("https://api.appstoreconnect.apple.com/v1/apps?limit=200&fields[apps]=name,bundleId,sku", headers=h).json()
+          print("== Apps in App Store Connect")
+          for b in r.get("data", []): a = b["attributes"]; print(f'{a["name"]}: {a["bundleId"]}')
+          if "errors" in r: print(r["errors"])
