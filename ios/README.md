@@ -30,7 +30,7 @@ HTTP ist nur für `*.ts.net` und lokale Adressen erlaubt. Die Verbindung läuft 
 Der Workflow **TestFlight** baut die App auf einem macOS-Runner, signiert sie über die Cloud-Signierung von Apple und lädt sie direkt zu TestFlight hoch. Gestartet wird er manuell (*Actions → TestFlight → Run workflow*) oder durch ein Tag wie `v0.3.0`. Die Build-Nummer ist die Laufnummer des Workflows.
 
 **Einmalig in App Store Connect:**
-1. Unter *Apps → +* eine neue App anlegen: Plattform iOS, Bundle-ID `de.Hausgeist.KoeVen`. Ist die Bundle-ID noch nicht registriert, vorher unter *developer.apple.com → Identifiers* anlegen.
+1. Unter *Apps → +* eine neue App anlegen: Plattform iOS, Bundle-ID `de.hausgeist.koeven`. Ist die Bundle-ID noch nicht registriert, vorher unter *developer.apple.com → Identifiers* anlegen.
 2. Unter *Benutzer und Zugriff → Integrationen → App Store Connect API* einen **Team-Schlüssel mit der Rolle Admin** erzeugen. Die Cloud-Signierung braucht Admin-Rechte. Die `.p8`-Datei lässt sich nur einmal herunterladen.
 
 **GitHub-Secrets** (*Repo → Settings → Secrets and variables → Actions*):

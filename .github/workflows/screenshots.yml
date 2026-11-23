@@ -45,8 +45,8 @@ jobs:
           mkdir -p shots
           shoot () {  # $1 = Name, Rest = Startargumente
             name=$1; shift
-            xcrun simctl terminate "$UDID" de.Hausgeist.KoeVen 2>/dev/null || true
-            xcrun simctl launch "$UDID" de.Hausgeist.KoeVen "$@"
+            xcrun simctl terminate "$UDID" de.hausgeist.koeven 2>/dev/null || true
+            xcrun simctl launch "$UDID" de.hausgeist.koeven "$@"
             sleep 6
             xcrun simctl io "$UDID" screenshot "shots/$name.png"
           }

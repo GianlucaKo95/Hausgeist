@@ -43,7 +43,7 @@ options:
   apns_key_id: ""
   apns_team_id: ""
   apns_key: ""
-  apns_bundle_id: de.Hausgeist.KoeVen
+  apns_bundle_id: de.hausgeist.koeven
   daily_brief: "07:30"
   mail_triage: true
   weekly_offers: true

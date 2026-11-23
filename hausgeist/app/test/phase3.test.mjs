@@ -75,7 +75,7 @@ test("APNs: Schlüssel einlesen und Token signieren", () => {
   for (const raw of [pem, pem.replace(/\n/g, "\\n"), pem.replace(/\n/g, " ")]) {
     assert.match(normalizeP8(raw), /^-----BEGIN PRIVATE KEY-----\n[A-Za-z0-9+/=\n]+\n-----END PRIVATE KEY-----\n$/);
   }
-  const client = new ApnsClient({ apns_key_id: "ABC123DEFG", apns_team_id: "TEAM123456", apns_key: pem.replace(/\n/g, " "), apns_bundle_id: "de.Hausgeist.KoeVen" });
+  const client = new ApnsClient({ apns_key_id: "ABC123DEFG", apns_team_id: "TEAM123456", apns_key: pem.replace(/\n/g, " "), apns_bundle_id: "de.hausgeist.koeven" });
   assert.equal(client.enabled, true);
   const jwt = client.token();
   const [h, c, s] = jwt.split(".");
