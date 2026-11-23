@@ -114,7 +114,7 @@ struct APIClient {
         try await request("api/approvals/action/\(id)", method: "POST", body: ["approve": approve])
     }
 
-    private func request<T: Decodable>(_ path: String, method: String = "GET", body: (any Encodable)? = nil, retry: Bool = true) async throws -> T {
+    func request<T: Decodable>(_ path: String, method: String = "GET", body: (any Encodable)? = nil, retry: Bool = true) async throws -> T {
         guard let base = AppConfig.serverURL else { throw APIError.noServer }
         var req = URLRequest(url: base.appending(path: path))
         req.httpMethod = method

@@ -1,0 +1,95 @@
+import SwiftUI
+
+struct RoutinesView: View {
+    @Environment(AuthService.self) private var auth
+    @State private var dailyBrief = "07:30"
+    @State private var briefOn = true
+    @State private var eveningCheck = "18:00"
+    @State private var calendarInsights = true
+    @State private var mailTriage = true
+    @State private var weeklyOffers = true
+    @State private var paperlessURL = ""
+    @State private var paperlessToken = ""
+    @State private var tokenSet = false
+    @State private var pushEnabled = false
+    @State private var error: String?
+    @State private var info: String?
+    @State private var loaded = false
+
+    var body: some View {
+        Form {
+            ErrorBanner(text: error)
+            if let info { Section { Label(info, systemImage: "checkmark.circle").foregroundStyle(.green) } }
+
+            Section {
+                Toggle("Tagesbriefing", isOn: $briefOn)
+                if briefOn {
+                    DatePicker("Uhrzeit", selection: timeBinding($dailyBrief), displayedComponents: .hourAndMinute)
+                }
+                Toggle("Mail-Überblick am Morgen", isOn: $mailTriage)
+            } header: {
+                Text("Morgens")
+            } footer: {
+                Text("Fristen, Termine des Tages, fällige Aufgaben, offene Freigaben und wichtige Mails.")
+            }
+
+            Section {
+                Toggle("Aus dem Kalender vorausdenken", isOn: $calendarInsights)
+                if calendarInsights {
+                    DatePicker("Abendliche Prüfung", selection: timeBinding($eveningCheck), displayedComponents: .hourAndMinute)
+                }
+            } footer: {
+                Text("Erinnert z. B. am Vorabend an die Mülltonne oder vor Geburtstagen an Geschenke.")
+            }
+
+            Section {
+                Toggle("Prospekt-Angebote am Montag", isOn: $weeklyOffers)
+            } header: {
+                Text("Einkauf")
+            }
+
+            Section {
+                TextField("http://…:8000", text: $paperlessURL).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                SecureField(tokenSet ? "API-Token (unverändert lassen)" : "API-Token", text: $paperlessToken)
+            } header: {
+                Text("Paperless-ngx")
+            } footer: {
+                Text("Optional: Rechnungen, Verträge und Scans werden dort abgelegt. Das Token findest du in Paperless unter Profil.")
+            }
+
+            Section {
+                LabeledContent("Push über die Hausgeist-App", value: pushEnabled ? "aktiv" : "nicht eingerichtet")
+            } footer: {
+                if !pushEnabled { Text("Dafür in der Add-on-Konfiguration den APNs-Schlüssel eintragen (einmalig).") }
+            }
+        }
+        .navigationTitle("Routinen & Ablage")
+        .toolbar { Button("Sichern") { Task { await save() } }.disabled(!loaded) }
+        .task { await load() }
+    }
+
+    private func load() async {
+        do {
+            let s = try await APIClient(auth: auth).adminSettings()
+            briefOn = !s.daily_brief.isEmpty
+            dailyBrief = s.daily_brief.isEmpty ? "07:30" : s.daily_brief
+            eveningCheck = s.evening_check.isEmpty ? "18:00" : s.evening_check
+            calendarInsights = s.calendar_insights; mailTriage = s.mail_triage; weeklyOffers = s.weekly_offers
+            paperlessURL = s.paperless_url; tokenSet = s.paperless_token_set; pushEnabled = s.push_enabled
+            loaded = true
+        } catch { self.error = error.localizedDescription }
+    }
+
+    private func save() async {
+        do {
+            try await APIClient(auth: auth).saveSettings(SettingsPatch(
+                daily_brief: briefOn ? dailyBrief : "", evening_check: eveningCheck,
+                mail_triage: mailTriage, weekly_offers: weeklyOffers, calendar_insights: calendarInsights,
+                paperless_url: paperlessURL.trimmingCharacters(in: .whitespaces),
+                paperless_token: paperlessToken.isEmpty ? nil : paperlessToken))
+            if !paperlessToken.isEmpty { tokenSet = true; paperlessToken = "" }
+            info = "Gespeichert"
+            error = nil
+        } catch { self.error = error.localizedDescription }
+    }
+}

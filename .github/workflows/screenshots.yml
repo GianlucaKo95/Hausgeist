@@ -54,6 +54,11 @@ jobs:
           shoot 2-chat -uiDemo -tab chat
           shoot 3-freigaben -uiDemo -tab approvals
           shoot 4-einstellungen -uiDemo -tab settings
+          shoot 7-postfaecher -uiDemo -tab settings -admin mailboxes
+          shoot 8-kalender -uiDemo -tab settings -admin calendars
+          shoot 9-konten -uiDemo -tab settings -admin accounts
+          shoot 10-smarthome -uiDemo -tab settings -admin smarthome
+          shoot 11-routinen -uiDemo -tab settings -admin routines
           xcrun simctl ui "$UDID" appearance dark
           shoot 5-chat-dunkel -uiDemo -tab chat
           shoot 6-freigaben-dunkel -uiDemo -tab approvals

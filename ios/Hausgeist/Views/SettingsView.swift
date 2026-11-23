@@ -9,6 +9,8 @@ struct SettingsView: View {
     @State private var status: String?
     @State private var checking = false
     @AppStorage("speakReplies") private var speakReplies = false
+    /// Nur für Screenshots im Demo-Modus: direkt eine Verwaltungsseite öffnen.
+    @State private var demoScreen: String? = AppConfig.isDemo ? AppConfig.launchArg("-admin") : nil
 
     var body: some View {
         NavigationStack {
@@ -33,6 +35,7 @@ struct SettingsView: View {
                 } footer: {
                     Text("Adresse des Hausgeist-Add-ons im VPN (Tailscale/WireGuard), Port 8099.")
                 }
+                AdminSection(me: me)
                 Section {
                     Toggle("Antworten vorlesen", isOn: $speakReplies)
                 } header: {
@@ -50,6 +53,16 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Einstellungen")
+            .navigationDestination(item: $demoScreen) { screen in
+                switch screen {
+                case "people": PeopleView()
+                case "calendars": CalendarsAdminView()
+                case "accounts": AccountsView()
+                case "smarthome": SmartHomeView()
+                case "routines": RoutinesView()
+                default: MailboxesView(me: me ?? Me(id: "u1", name: "Gianluca", role: "admin"))
+                }
+            }
         }
     }
 
