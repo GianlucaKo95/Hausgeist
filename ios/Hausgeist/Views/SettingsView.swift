@@ -60,6 +60,7 @@ struct SettingsView: View {
                 case "accounts": AccountsView()
                 case "smarthome": SmartHomeView()
                 case "routines": RoutinesView()
+                case "bring": BringView()
                 default: MailboxesView(me: me ?? Me(id: "u1", name: "Gianluca", role: "admin"))
                 }
             }

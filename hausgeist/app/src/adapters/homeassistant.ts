@@ -93,6 +93,18 @@ export class HomeAssistant {
   }
 
   /** Einzelner WebSocket-Befehl, z. B. config/area_registry/list. */
+  /** Dienst mit Rückgabewert (z. B. todo.get_items). */
+  async callServiceWithResponse<T>(domain: string, service: string, data: Record<string, unknown>): Promise<T> {
+    const res = await fetch(`${this.config.haBaseUrl}/services/${domain}/${service}?return_response`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(`${domain}.${service} fehlgeschlagen: ${res.status} ${await res.text()}`);
+    const body = (await res.json()) as { service_response?: T };
+    return (body.service_response ?? {}) as T;
+  }
+
   async wsCommand<T>(type: string, extra: Record<string, unknown> = {}): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const ws = new WebSocket(this.config.haWsUrl);

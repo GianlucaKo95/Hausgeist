@@ -17,6 +17,7 @@ struct AdminSection: View {
                     NavigationLink { CalendarsAdminView() } label: { Label("Kalender", systemImage: "calendar") }
                     NavigationLink { AccountsView() } label: { Label("Konten & Empfänger", systemImage: "eurosign.bank.building") }
                     NavigationLink { SmartHomeView() } label: { Label("Smart Home", systemImage: "house") }
+                    NavigationLink { BringView() } label: { Label("Einkaufslisten (Bring!)", systemImage: "cart") }
                     NavigationLink { RoutinesView() } label: { Label("Routinen & Ablage", systemImage: "clock.arrow.circlepath") }
                 }
             } header: {

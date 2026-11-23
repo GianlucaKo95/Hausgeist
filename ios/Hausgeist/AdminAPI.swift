@@ -14,6 +14,14 @@ struct CalendarFeed: Codable, Hashable, Identifiable {
     var owner: String
 }
 
+struct BringListConfig: Codable, Hashable, Identifiable {
+    var id: String { entity_id }
+    var name: String
+    var entity_id: String
+    var stores: [String]
+    var `default`: Bool
+}
+
 struct HaCalendar: Codable, Hashable, Identifiable {
     var id: String { entity_id }
     var name: String
@@ -49,6 +57,7 @@ struct AdminSettings: Codable {
     var payment_mode: String?
     var fints_product_id: String?
     var banks: [BankLogin]?
+    var bring_lists: [BringListConfig]?
 }
 
 struct BankLogin: Codable, Identifiable, Hashable {
@@ -92,6 +101,7 @@ struct SettingsPatch: Encodable {
     var paperless_token: String?
     var payment_mode: String?
     var fints_product_id: String?
+    var bring_lists: [BringListConfig]?
 }
 
 struct Mailbox: Codable, Identifiable, Hashable {
@@ -330,6 +340,7 @@ enum DemoAdmin {
         HAEntity(entity_id: "lock.haustuer", domain: "lock", state: "locked", name: "Haustür", unit: nil),
         HAEntity(entity_id: "sensor.pv_leistung", domain: "sensor", state: "2140", name: "PV-Leistung", unit: "W"),
         HAEntity(entity_id: "sensor.speicher_soc", domain: "sensor", state: "76", name: "Speicher Ladestand", unit: "%"),
+        HAEntity(entity_id: "todo.zuhause", domain: "todo", state: "4", name: "Zuhause (Bring!)", unit: nil),
         HAEntity(entity_id: "switch.waschmaschine", domain: "switch", state: "off", name: "Waschmaschine", unit: nil),
     ]
     static let settings = AdminSettings(
@@ -345,5 +356,6 @@ enum DemoAdmin {
             BankLogin(bank: "sparkasse_duisburg", name: "Sparkasse Duisburg", default_url: "https://banking-rl4.s-fints-pt-rl.de/fints30", login: "gk1234", url: "", pin_set: true),
             BankLogin(bank: "deutsche_bank", name: "Deutsche Bank", default_url: "https://fints.deutsche-bank.de/", login: "", url: "", pin_set: false),
             BankLogin(bank: "dkb", name: "DKB", default_url: "https://fints.dkb.de/fints", login: "", url: "", pin_set: false),
-        ])
+        ],
+        bring_lists: [BringListConfig(name: "Zuhause", entity_id: "todo.zuhause", stores: ["Rewe", "Aldi", "dm"], default: true)])
 }

@@ -38,6 +38,12 @@ const SettingsBody = z.object({
   calendar_feeds: z.array(z.object({ name: z.string().min(1), url: z.string().regex(/^(https?|webcal):\/\//, "Link muss mit https:// oder webcal:// beginnen"), owner: z.string().default("shared") })).optional(),
   ha_calendars: z.array(z.object({ name: z.string().min(1), entity_id: z.string().regex(/^calendar\.[a-z0-9_]+$/), owner: z.string().default("shared") })).optional(),
   ha_entities: z.array(z.string().min(1)).optional(),
+  bring_lists: z.array(z.object({
+    name: z.string().min(1).max(40),
+    entity_id: z.string().regex(/^todo\.[a-z0-9_]+$/, "Bitte eine To-do-Liste (todo.…) wählen"),
+    stores: z.array(z.string().min(1)).default([]),
+    default: z.boolean().default(false),
+  })).optional(),
   energy: z.object({
     pv_power: z.string().optional(), battery_soc: z.string().optional(), battery_power: z.string().optional(),
     grid_power: z.string().optional(), house_power: z.string().optional(),
@@ -123,7 +129,7 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
       json(res, 200, {
         icloud_user: config.icloud_user, icloud_password_set: Boolean(config.icloud_app_password),
         calendars: config.calendars, calendar_feeds: config.calendar_feeds, ha_calendars: config.ha_calendars,
-        ha_entities: config.ha_entities, energy: config.energy,
+        ha_entities: config.ha_entities, energy: config.energy, bring_lists: config.bring_lists,
         daily_brief: config.daily_brief, evening_check: config.evening_check, mail_triage: config.mail_triage,
         weekly_offers: config.weekly_offers, calendar_insights: config.calendar_insights,
         paperless_url: config.paperless_url, paperless_token_set: Boolean(config.paperless_token),

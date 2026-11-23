@@ -266,8 +266,14 @@ export class Routines {
   private async recurringItems(today: string): Promise<void> {
     const { data } = await db().from("recurring_items").select("*").eq("active", true).lte("next_due", today);
     for (const r of data ?? []) {
-      const { data: open } = await db().from("shopping_lists").select("id").eq("done", false).ilike("item", r.item).limit(1);
-      if (!open?.length) await db().from("shopping_lists").insert({ item: r.item, quantity: r.quantity, store: r.store });
+      try {
+        if (!(await this.base.shopping.isOpen(r.item, r.store))) {
+          await this.base.shopping.add([{ item: r.item, quantity: r.quantity ?? undefined, store: r.store ?? undefined }]);
+        }
+      } catch (e) {
+        log.error(`Wiederkehrender Artikel ${r.item} nicht eingetragen`, e);
+        continue; // nächster Versuch beim nächsten Durchlauf
+      }
       let next = r.next_due as string;
       while (next <= today) next = addDays(next, r.interval_days);
       await db().from("recurring_items").update({ next_due: next }).eq("id", r.id);
@@ -325,8 +331,8 @@ Antworte ausschließlich mit JSON: {"price_euro": Zahl oder null, "shop": "Händ
 
   // ── Wochenangebote ───────────────────────────────────────────────────────
   private async weeklyOffers(): Promise<void> {
-    const [{ data: list }, { data: rec }, { data: prefs }] = await Promise.all([
-      db().from("shopping_lists").select("item").eq("done", false),
+    const [list, { data: rec }, { data: prefs }] = await Promise.all([
+      this.base.shopping.list().catch(() => []),
       db().from("recurring_items").select("item").eq("active", true),
       db().from("preferences").select("key, value").is("user_id", null).ilike("key", "einkauf%"),
     ]);

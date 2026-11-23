@@ -7,31 +7,24 @@ import { ok, safe, requireAdult, findUser, type ToolContext } from "./context.js
 export function shoppingTools(ctx: ToolContext) {
   return [
     // ── Einkaufsliste ──────────────────────────────────────────────────────
-    tool("shopping_list", "Einkaufsliste, optional nur für einen Laden; sortiert nach Laden und Abteilung.", {
+    tool("shopping_list", "Einkaufsliste (Lebensmittel & Co. kommen live aus Bring!), optional nur für einen Laden oder eine Bring!-Liste.", {
       store: z.string().optional(),
       include_done: z.boolean().default(false),
-    }, safe(async (a) => {
-      let q = db().from("shopping_lists").select("id, item, quantity, store, category, done").order("store", { nullsFirst: false }).order("category").order("created_at");
-      if (!a.include_done) q = q.eq("done", false);
-      if (a.store) q = q.ilike("store", a.store);
-      const { data, error } = await q;
-      if (error) throw error;
-      return ok(data ?? []);
-    })),
+    }, safe(async (a) => ok(await ctx.shopping.list(a.store, a.include_done)))),
 
-    tool("add_to_list", "Artikel auf die Einkaufsliste setzen (auch für Kinder). Laden und Abteilung (z. B. Obst & Gemüse, Kühlregal, Drogerie) mit angeben, wenn bekannt.", {
+    tool("add_to_list", "Artikel auf die Einkaufsliste setzen (auch für Kinder). Lebensmittel und Drogerie gehen automatisch in Bring!. Laden nur angeben, wenn der Nutzer einen nennt; Menge als quantity (z. B. „2 Liter“). Artikelnamen kurz und im Singular wie in Bring! (z. B. „Milch“, „Bananen“).", {
       items: z.array(z.object({
         item: z.string(), quantity: z.string().optional(), store: z.string().optional(), category: z.string().optional(),
       })).min(1),
     }, safe(async (a) => {
-      const { error } = await db().from("shopping_lists").insert(a.items.map((i) => ({ ...i, added_by: ctx.user.id })));
-      if (error) throw error;
-      return ok(`${a.items.length} Artikel hinzugefügt`);
+      const r = await ctx.shopping.add(a.items, ctx.user.id);
+      const parts = [r.bring ? `${r.bring} in Bring!` : "", r.own ? `${r.own} in der Hausgeist-Liste` : ""].filter(Boolean);
+      const skipped = a.items.length - r.bring - r.own;
+      return ok(`${parts.join(", ") || "Nichts Neues"}${skipped ? ` (${skipped} standen schon drauf)` : ""}`);
     })),
 
-    tool("check_off", "Artikel als erledigt markieren.", { ids: z.array(z.string().uuid()).min(1) }, safe(async (a) => {
-      const { error } = await db().from("shopping_lists").update({ done: true }).in("id", a.ids);
-      if (error) throw error;
+    tool("check_off", "Artikel als erledigt markieren (ids aus shopping_list).", { ids: z.array(z.string().min(1)).min(1) }, safe(async (a) => {
+      await ctx.shopping.checkOff(a.ids);
       return ok("Abgehakt");
     })),
 

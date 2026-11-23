@@ -32,6 +32,13 @@ const BankLogins = z.object({
   dkb: BankLogin.optional(),
 });
 
+const BringList = z.object({
+  name: z.string().min(1),
+  entity_id: z.string().regex(/^todo\.[a-z0-9_]+$/, "entity_id muss mit todo. beginnen"),
+  stores: z.array(z.string()).default([]),
+  default: z.boolean().default(false),
+});
+
 const Energy = z.object({
   pv_power: z.string().optional(),
   battery_soc: z.string().optional(),
@@ -59,6 +66,7 @@ export const Options = z.object({
   calendar_insights: z.boolean().default(true),
   evening_check: z.string().regex(/^(([01]\d|2[0-3]):[0-5]\d)?$/, "evening_check im Format HH:MM").default("18:00"),
   ha_entities: z.array(z.string()).default([]),
+  bring_lists: z.array(BringList).default([]),
   energy: Energy.default({}),
   github_token: z.string().default(""),
   serpapi_key: z.string().default(""),
@@ -97,6 +105,7 @@ export const AppSettings = z.object({
   calendar_feeds: z.array(CalendarFeed),
   ha_calendars: z.array(HaCalendar),
   ha_entities: z.array(z.string()),
+  bring_lists: z.array(BringList),
   energy: Energy,
   daily_brief: time,
   evening_check: time,

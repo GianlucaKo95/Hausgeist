@@ -6,6 +6,7 @@ import type { Paperless } from "../adapters/paperless.js";
 import type { ActionService } from "../core/actions.js";
 import type { FinanceAgent } from "../agents/finance.js";
 import type { IntakeAgent } from "../agents/intake.js";
+import type { ShoppingList } from "../core/shopping-list.js";
 import { db } from "../core/db.js";
 
 export interface ToolContext {
@@ -16,6 +17,7 @@ export interface ToolContext {
   actions: ActionService;
   finance: FinanceAgent;
   intake: IntakeAgent;
+  shopping: ShoppingList;
   /** Die Person, für die der Master-Agent gerade arbeitet. */
   user: AppUser;
 }

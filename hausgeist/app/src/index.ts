@@ -1,3 +1,4 @@
+import { ShoppingList } from "./core/shopping-list.js";
 import { loadConfig } from "./core/config.js";
 import { db, enableAppPush } from "./core/db.js";
 import { ApnsClient } from "./adapters/apns.js";
@@ -51,7 +52,8 @@ async function main() {
   const communication = new CommunicationAgent(config, (mail) => intake.handleMail(mail));
 
   // Master-Agent mit acht Fachagenten (auf Anfrage) und Routinen (zeitgesteuert)
-  const base = { config, ha, calendar, paperless, actions, finance, intake };
+  const shopping = new ShoppingList(config, ha);
+  const base = { config, ha, calendar, paperless, actions, finance, intake, shopping };
   const master = new MasterAgent(config, base);
   const routines = new Routines(config, ha, base);
 
