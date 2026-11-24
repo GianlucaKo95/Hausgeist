@@ -38,3 +38,22 @@ test("Energie-Dashboard gibt den Ausschlag (gleiches Gerät)", () => {
   assert.equal(r.pick.pv_power, "sensor.dach_west_leistung");
   assert.equal(r.fromDashboard, true);
 });
+
+test("Sungrow-Integration (Modbus): typische Namen", () => {
+  const sungrow = [
+    st("sensor.total_dc_power", "Total DC power", 4120, "W", "power"),
+    st("sensor.daily_pv_generation", "Daily PV generation", 18.2, "kWh", "energy"),
+    st("sensor.battery_level", "Battery level", 63, "%", "battery"),
+    st("sensor.battery_charging_power", "Battery charging power", 1500, "W", "power"),
+    st("sensor.battery_power", "Battery power", 1500, "W", "power"),
+    st("sensor.meter_active_power", "Meter active power", -900, "W", "power"),
+    st("sensor.load_power", "Load power", 1700, "W", "power"),
+    st("sensor.export_power", "Export power", 900, "W", "power"),
+  ];
+  const r = detectEnergy(sungrow);
+  assert.equal(r.pick.pv_power, "sensor.total_dc_power");
+  assert.equal(r.pick.battery_soc, "sensor.battery_level");
+  assert.ok(["sensor.battery_power", "sensor.battery_charging_power"].includes(r.pick.battery_power));
+  assert.equal(r.pick.grid_power, "sensor.meter_active_power");
+  assert.equal(r.pick.house_power, "sensor.load_power");
+});

@@ -20,24 +20,24 @@ export interface EnergyPrefs {
 
 const RULES: Record<EnergyKey, { want: RegExp; avoid: RegExp }> = {
   pv_power: {
-    want: /\b(pv|solar|photovoltai|wechselrichter|inverter|erzeugung|production|yield|input_power|dc_power|mppt|hoymiles|opendtu|ahoy)/,
-    avoid: /(forecast|prognose|vorhersage|energy|energie|total|today|heute|kwh|batter|speicher|akku|grid|netz|einspeis|bezug|verbrauch|consumption|limit|max|peak)/,
+    want: /(pv|solar|photovoltai|wechselrichter|inverter|erzeugung|production|yield|input_power|dc_power|mppt|hoymiles|opendtu|ahoy)/,
+    avoid: /(forecast|prognose|vorhersage|energy|energie|today|heute|kwh|batter|speicher|akku|grid|netz|einspeis|bezug|export|import|meter|verbrauch|consumption|load|limit|max|peak)/,
   },
   battery_power: {
     want: /(batter|speicher|akku|storage|charge_discharge|lade_?leistung|ladeleistung|battery_power|solix|zendure|ecoflow)/,
-    avoid: /(soc|state_of_charge|ladezustand|level|capacity|kapazit|energy|energie|total|today|kwh|voltage|spannung|current|strom|temperature|temp|health|max|limit)/,
+    avoid: /(soc|state_of_charge|ladezustand|level|capacity|kapazit|energy|energie|today|kwh|voltage|spannung|current|strom|temperature|temp|health|max|limit)/,
   },
   battery_soc: {
-    want: /(soc|state_of_charge|ladezustand|speicher|batter|akku|storage)/,
+    want: /(soc|state_of_charge|ladezustand|speicher|batter|akku|storage|battery_level)/,
     avoid: /(phone|iphone|ipad|watch|airpods|remote|fernbed|tür|tuer|door|window|fenster|motion|bewegung|button|taster|thermostat|heizkörper|sensor_?batt|rauchmelder|smoke|leak|tag|keyfob|car|auto|mg5|ioniq|tesla|_low)/,
   },
   grid_power: {
     want: /(grid|netz|einspeis|bezug|meter|zähler|zaehler|smartmeter|smart_meter|hausanschluss|tibber|shelly_?3?em|power_meter|active_power|wirkleistung)/,
-    avoid: /(pv|solar|batter|speicher|energy|energie|total|today|kwh|frequency|frequenz|voltage|spannung|current|strom|limit|max|phase_?[abc123]\b|_l[123]\b)/,
+    avoid: /(pv|solar|batter|speicher|energy|energie|today|kwh|frequency|frequenz|voltage|spannung|current|strom|limit|max|phase_?[abc123]\b|_l[123]\b)/,
   },
   house_power: {
     want: /(haus|house|home|verbrauch|consumption|load|last|eigenverbrauch)/,
-    avoid: /(energy|energie|total|today|kwh|forecast|prognose|batter|pv|solar|_l[123]\b|max)/,
+    avoid: /(energy|energie|today|kwh|forecast|prognose|batter|pv|solar|_l[123]\b|max)/,
   },
 };
 
