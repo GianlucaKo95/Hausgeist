@@ -6,6 +6,33 @@ import { ok, safe, type ToolContext } from "./context.js";
 /** Werkzeuge des Master-Agenten: Präferenzen, laufende Aufgaben, Rechercheablage. */
 export function memoryTools(ctx: ToolContext) {
   return [
+    tool("remember", "Etwas dauerhaft über die Person merken (gilt in allen künftigen Gesprächen). Für ausdrückliche Bitten wie „merk dir …“. Keine Passwörter, PINs oder Kontonummern.", {
+      fact: z.string().min(3).max(300),
+    }, safe(async (a) => {
+      if (/(passwort|kennwort|pin\b|tan\b|iban|kontonummer)/i.test(a.fact)) throw new Error("Zugangsdaten und Kontonummern merke ich mir nicht im Gedächtnis.");
+      const { error } = await db().from("memories").insert({ user_id: ctx.user.id, text: a.fact });
+      if (error) throw error;
+      return ok("Gemerkt – gilt ab jetzt in jedem Gespräch.");
+    })),
+
+    tool("recall", "Gedächtnis durchsuchen (leer = alles), z. B. wenn die Person fragt „was weißt du über …“.", {
+      query: z.string().default(""),
+    }, safe(async (a) => {
+      let q = db().from("memories").select("id, text, updated_at").eq("user_id", ctx.user.id).order("updated_at", { ascending: false }).limit(200);
+      if (a.query) q = q.ilike("text", `%${a.query}%`);
+      const { data, error } = await q;
+      if (error) throw error;
+      return ok(data ?? []);
+    })),
+
+    tool("forget", "Einen gemerkten Fakt löschen (id aus recall), z. B. bei „vergiss das“.", {
+      id: z.string().uuid(),
+    }, safe(async (a) => {
+      const { error } = await db().from("memories").delete().eq("id", a.id).eq("user_id", ctx.user.id);
+      if (error) throw error;
+      return ok("Vergessen");
+    })),
+
     tool("remember_preference", "Eine Vorliebe oder Arbeitsweise dauerhaft speichern – nur was die Person ausdrücklich sagt.", {
       key: z.string().describe("kurzer Schlüssel, z. B. einkauf.supermarkt"),
       value: z.string(),

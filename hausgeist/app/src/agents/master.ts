@@ -1,3 +1,4 @@
+import { loadMemories, memoryBlock } from "../core/long-memory.js";
 import { itTools } from "../tools/it.js";
 import { query, createSdkMcpServer, type AgentDefinition, type SDKUserMessage, type SdkMcpToolDefinition } from "@anthropic-ai/claude-agent-sdk";
 
@@ -119,6 +120,14 @@ Du buchst nie selbst und gibst nie Zahlungsdaten ein. Eine Anfrage per Mail ans 
  * Ergebnisse und merkt sich Präferenzen. Jeder Fachagent bekommt nur seine
  * eigenen Werkzeuge.
  */
+/** Titel der letzten Gespräche – damit der Hausgeist weiß, worüber zuletzt gesprochen wurde. */
+async function recentConversations(userId: string): Promise<string> {
+  const { data } = await db().from("conversations").select("title, updated_at").eq("user_id", userId)
+    .neq("title", "Neues Gespräch").order("updated_at", { ascending: false }).limit(8);
+  if (!data?.length) return "";
+  return `\nLetzte Gespräche (Themen): ${data.map((c) => `„${c.title}“ (${new Date(c.updated_at).toLocaleDateString("de-DE", { timeZone: "Europe/Berlin" })})`).join(", ")}\n`;
+}
+
 function nowBerlin(): string {
   return new Date().toLocaleString("de-DE", { timeZone: "Europe/Berlin", weekday: "long", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
@@ -168,6 +177,7 @@ Jetzt: ${now} (Europe/Berlin).
 Du sprichst mit ${user.name} (Rolle: ${user.role}).
 Haushalt: ${(members ?? []).map((m) => `${m.name} (${m.role})`).join(", ")}.
 Gespeicherte Präferenzen: ${JSON.stringify(prefs ?? [])}
+${memoryBlock(user.name, await loadMemories(user.id))}${await recentConversations(user.id)}
 
 Deine Aufgabe:
 - Verstehe die Anfrage und erkenne, welche Fachagenten gebraucht werden. Delegiere mit dem Agent-Werkzeug; mehrere Agenten bei Bedarf nacheinander oder parallel.
@@ -176,6 +186,7 @@ Deine Aufgabe:
 - Frage nach, wenn die Anfrage unklar ist, statt zu raten.
 - Zugangsdaten (Postfächer, Apple-ID/Kalender, Bankzugänge, Bring!) pflegt die Person selbst in der Hausgeist-App unter Einstellungen → Verwaltung. Verweise bei Anmeldefehlern genau dorthin – nie auf „Konfiguration“, Dienste oder Add-on-Einstellungen.
 - Speichere Präferenzen nur, wenn die Person sie ausdrücklich nennt.
+- Du hast ein Langzeitgedächtnis über alle Gespräche hinweg (siehe oben). Es wird nach jeder Antwort automatisch ergänzt. Nutze es selbstverständlich, ohne es ständig zu erwähnen. „Merk dir …“ → remember, „was weißt du über …“ → recall, „vergiss …“ → forget.
 - Kinder dürfen nur Familie, Einkaufsliste und Recherche nutzen.
 - Haushaltswissen (wo ist was, Passwörter für Gäste, Anleitungen) speicherst und findest du selbst mit den Notiz-Werkzeugen.
 - Hat die Person Dateien angehängt (upload_id), gib die upload_id an den passenden Agenten weiter – Fachagenten sehen die Datei nur über die upload_id:

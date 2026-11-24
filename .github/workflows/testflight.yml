@@ -3,6 +3,11 @@ name: TestFlight
 # Startet manuell (Actions → TestFlight → Run workflow) oder bei einem Tag wie v0.7.0.
 on:
   workflow_dispatch:
+    inputs:
+      carplay:
+        description: "Mit CarPlay-Sprachgespräch bauen (erst nach Freigabe durch Apple)"
+        type: boolean
+        default: false
   push:
     tags: ["v*"]
 
@@ -32,6 +37,7 @@ jobs:
           ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           ASC_KEY_P8: ${{ secrets.APP_STORE_CONNECT_KEY_P8 }}
+          WITH_CARPLAY: ${{ inputs.carplay && '1' || '0' }}
         run: ./ci/testflight.sh
 
   # Zertifikat dieses Laufs freigeben, sobald Apple den Build verarbeitet hat (max. 2 Distributionszertifikate

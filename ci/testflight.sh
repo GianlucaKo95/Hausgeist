@@ -21,6 +21,12 @@ brew list xcodegen >/dev/null 2>&1 || brew install xcodegen >/dev/null
 
 # Release: Push gegen die Produktionsumgebung, fortlaufende Build-Nummer
 sed -i '' 's/aps-environment: development/aps-environment: production/' project.yml
+# CarPlay-Sprachgespräch erst nach Apples Freigabe des Entitlements einschalten
+if [ "${WITH_CARPLAY:-0}" = "1" ]; then
+  sed -i '' 's/        com.apple.developer.usernotifications.time-sensitive: true/        com.apple.developer.usernotifications.time-sensitive: true\
+        com.apple.developer.carplay-voice-based-conversation: true/' project.yml
+  grep -q carplay-voice-based-conversation project.yml && echo "CarPlay: eingeschaltet"
+fi
 sed -i '' "s/CURRENT_PROJECT_VERSION: \"1\"/CURRENT_PROJECT_VERSION: \"${GITHUB_RUN_NUMBER:-1}\"/" project.yml
 
 mkdir -p build

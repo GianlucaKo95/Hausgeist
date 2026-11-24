@@ -43,3 +43,13 @@ Der Workflow **TestFlight** baut die App auf einem macOS-Runner, signiert sie ü
 | `APPLE_TEAM_ID` | Team-ID aus *developer.apple.com → Membership* |
 
 Danach in TestFlight Annika als interne Testerin hinzufügen.
+
+## CarPlay (Sprachgespräch)
+
+Die App enthält eine CarPlay-Oberfläche in der Kategorie „sprachbasierte Konversations-App“ (ab iOS 26.4).
+Apple muss dafür das Entitlement `com.apple.developer.carplay-voice-based-conversation` freigeben:
+
+1. https://developer.apple.com/contact/carplay/ → Kategorie „Voice-based conversational app“, Bundle-ID `de.hausgeist.koeven`.
+2. Nach der Freigabe: Actions → TestFlight → „Run workflow“ mit Haken bei **carplay**.
+
+Ohne Freigabe baut die App wie bisher; der CarPlay-Teil ist dann einfach unsichtbar.

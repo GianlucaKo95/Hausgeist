@@ -67,6 +67,8 @@ const Energy = z.object({
 export const Options = z.object({
   anthropic_api_key: z.string().min(1, "anthropic_api_key fehlt"),
   model: z.string().default("claude-sonnet-5-5"),
+  /** Kleines Modell fürs Langzeitgedächtnis (läuft nach jeder Antwort im Hintergrund) */
+  memory_model: z.string().default("claude-haiku-5-5"),
   supabase_url: z.string().url(),
   supabase_service_key: z.string().min(1, "supabase_service_key fehlt"),
   paperless_url: z.string().default(""),

@@ -38,6 +38,11 @@ struct SettingsView: View {
                 }
                 AdminSection(me: me)
                 Section {
+                    NavigationLink { MemoriesView() } label: { Label("Was der Hausgeist über mich weiß", systemImage: "brain") }
+                } footer: {
+                    Text("Der Hausgeist merkt sich beim Chatten Wichtiges über dich und nutzt es in jedem Gespräch. Hier kannst du einzelne Punkte oder alles löschen.")
+                }
+                Section {
                     Toggle("Standort für Erinnerungen", isOn: $shareLocation)
                         .onChange(of: shareLocation) {
                             if shareLocation { LocationService.shared.start() } else { LocationService.shared.stop() }

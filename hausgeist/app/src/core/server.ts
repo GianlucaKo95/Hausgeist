@@ -12,6 +12,7 @@ import type { SettingsStore } from "./settings.js";
 import { handleAdmin } from "./admin-api.js";
 import { ChatJobs } from "./chat-jobs.js";
 import { Conversations } from "./conversations.js";
+import { LongMemory } from "./long-memory.js";
 import type { FinTSProvider } from "../adapters/payment.js";
 import type { FritzBox } from "../adapters/fritzbox.js";
 import type { WindowsPc } from "../adapters/pc.js";
@@ -90,6 +91,8 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
   };
 
   const conversations = new Conversations(config.dataDir);
+  const memory = new LongMemory(config);
+  listUsers().then((u) => memory.backfill(u)).catch(() => undefined);
   const jobs = new ChatJobs(async (job) => {
     const target = (await listUsers()).find((u) => u.id === job.userId);
     if (!target?.notify_service) return;
@@ -146,7 +149,12 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
           save: (sid) => conversations.setSession(conv, sid),
           history: () => conversations.historyText(conv.id),
         }).then(
-          async (reply) => { await conversations.add(conv, "ghost", reply).catch(() => undefined); return reply; },
+          async (reply) => {
+            await conversations.add(conv, "ghost", reply).catch(() => undefined);
+            // Langzeitgedächtnis im Hintergrund – gilt danach in jedem Gespräch
+            memory.learn(user.id, user.name, message, reply, conv.id);
+            return reply;
+          },
           async (e) => { await conversations.add(conv, "error", e instanceof Error ? e.message : String(e)).catch(() => undefined); throw e; },
         );
 
@@ -193,6 +201,21 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
       }
       if (req.method === "DELETE" && path.endsWith("/api/location")) {
         it.positions.clear(user.id);
+        return json(res, 200, { ok: true });
+      }
+
+      // ── Gedächtnis ansehen/löschen ───────────────────────────────────
+      if (req.method === "GET" && path.endsWith("/api/memories")) {
+        const { data } = await db().from("memories").select("id, text, updated_at").eq("user_id", user.id).order("updated_at", { ascending: false });
+        return json(res, 200, { memories: data ?? [] });
+      }
+      const memMatch = path.match(/\/api\/memories\/([0-9a-f-]{36})$/);
+      if (req.method === "DELETE" && memMatch) {
+        await db().from("memories").delete().eq("id", memMatch[1]).eq("user_id", user.id);
+        return json(res, 200, { ok: true });
+      }
+      if (req.method === "DELETE" && path.endsWith("/api/memories")) {
+        await db().from("memories").delete().eq("user_id", user.id);
         return json(res, 200, { ok: true });
       }
 

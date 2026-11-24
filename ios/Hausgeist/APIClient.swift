@@ -108,6 +108,27 @@ struct APIClient {
         return r.jobs.map(\.id)
     }
 
+    // MARK: Gedächtnis
+
+    struct MemoryItem: Decodable, Identifiable, Hashable { let id: String; let text: String; let updated_at: String }
+
+    func memories() async throws -> [MemoryItem] {
+        if AppConfig.isDemo { return [MemoryItem(id: "m1", text: "Fährt einen MG5 (Elektroauto)", updated_at: ""), MemoryItem(id: "m2", text: "Kauft Lebensmittel meist bei Rewe und Aldi", updated_at: "")] }
+        struct R: Decodable { let memories: [MemoryItem] }
+        let r: R = try await request("api/memories")
+        return r.memories
+    }
+
+    func deleteMemory(_ id: String) async throws {
+        struct R: Decodable { let ok: Bool }
+        let _: R = try await request("api/memories/\(id)", method: "DELETE")
+    }
+
+    func deleteAllMemories() async throws {
+        struct R: Decodable { let ok: Bool }
+        let _: R = try await request("api/memories", method: "DELETE")
+    }
+
     // MARK: Standort
 
     struct Place: Decodable { let name: String; let lat: Double; let lon: Double; let radius: Double }

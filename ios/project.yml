@@ -8,7 +8,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.10"
-    MARKETING_VERSION: "0.12.2"
+    MARKETING_VERSION: "0.13.0"
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: ""          # in Xcode unter Signing & Capabilities setzen
 targets:
@@ -48,6 +48,14 @@ targets:
         NSMicrophoneUsageDescription: Damit du mit dem Hausgeist sprechen kannst.
         NSLocationWhenInUseUsageDescription: Damit der Hausgeist dich an Orte und rechtzeitiges Losfahren zu Terminen erinnern kann.
         NSLocationAlwaysAndWhenInUseUsageDescription: Damit Erinnerungen beim Verlassen oder Erreichen eines Ortes auch funktionieren, wenn die App geschlossen ist.
-        UIBackgroundModes: [location, remote-notification]
+        UIBackgroundModes: [location, remote-notification, audio]
+        # CarPlay: Sprach-Gespräch mit dem Hausgeist (sichtbar erst mit Apples Freigabe – siehe ios/README.md)
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: true
+          UISceneConfigurations:
+            CPTemplateApplicationSceneSessionRoleApplication:
+              - UISceneClassName: CPTemplateApplicationScene
+                UISceneConfigurationName: CarPlay
+                UISceneDelegateClassName: $(PRODUCT_MODULE_NAME).CarPlaySceneDelegate
         NSSpeechRecognitionUsageDescription: Deine Sprache wird in Text umgewandelt – wenn möglich direkt auf dem iPhone.
         CFBundleDevelopmentRegion: de
