@@ -6,7 +6,8 @@ ENV TZ=Europe/Berlin
 
 WORKDIR /app
 COPY app/package.json app/package-lock.json ./
-RUN npm ci
+# --ignore-scripts: ssh2/cpu-features würden sonst C++ unter ARM-Emulation kompilieren (sehr langsam); SSH läuft auch ohne
+RUN npm ci --ignore-scripts
 
 COPY app/tsconfig.json ./
 COPY app/src ./src
