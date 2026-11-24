@@ -8,7 +8,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.10"
-    MARKETING_VERSION: "0.7.0"
+    MARKETING_VERSION: "0.7.1"
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: ""          # in Xcode unter Signing & Capabilities setzen
 targets:
@@ -37,14 +37,12 @@ targets:
         ITSAppUsesNonExemptEncryption: false   # nur HTTPS/Standardverschlüsselung → keine Exportabfrage in TestFlight
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
-        # Die App spricht den Pi über das VPN per HTTP an (Tailscale/WireGuard
-        # verschlüsselt die Verbindung). Nur lokale/VPN-Adressen sind erlaubt.
         NSAppTransportSecurity:
-          NSAllowsLocalNetworking: true
-          NSExceptionDomains:
-            ts.net:
-              NSIncludesSubdomains: true
-              NSExceptionAllowsInsecureHTTPLoads: true
+          # Der Server wird per HTTP über das VPN (Tailscale/WireGuard verschlüsselt) oder
+          # im eigenen WLAN angesprochen – auch per IP-Adresse (100.x.x.x, 192.168.x.x),
+          # für die ATS keine Ausnahmen per Domain kennt. Supabase läuft weiterhin über HTTPS.
+          # Achtung: NSAllowsLocalNetworking würde NSAllowsArbitraryLoads aushebeln, daher nicht setzen.
+          NSAllowsArbitraryLoads: true
         NSLocalNetworkUsageDescription: Hausgeist verbindet sich mit deinem Home-Assistant-Server.
         NSCameraUsageDescription: Zum Scannen von Briefen, Rechnungen und Verträgen.
         NSMicrophoneUsageDescription: Damit du mit dem Hausgeist sprechen kannst.
