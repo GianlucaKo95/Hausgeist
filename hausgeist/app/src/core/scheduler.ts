@@ -82,6 +82,7 @@ export class Routines {
     private readonly fints?: FinTSProvider,
   ) {
     this.travel = new Travel(config.dataDir);
+    this.loadDaily();
     this.llm = new Anthropic({ apiKey: config.anthropic_api_key });
   }
 
@@ -97,10 +98,20 @@ export class Routines {
     fn().catch((e) => log.error(`${name} fehlgeschlagen`, e)).finally(() => this.running.delete(name));
   }
 
+  /** Tagesroutinen merken sich ihren letzten Lauf auf dem Pi – ein Neustart löst sie nicht erneut aus. */
   private once(key: string, date: string): boolean {
     if (this.lastDaily[key] === date) return false;
     this.lastDaily[key] = date;
+    try { writeFileSync(join(this.config.dataDir, "routines.json"), JSON.stringify(this.lastDaily)); } catch { /* egal */ }
     return true;
+  }
+
+  private loadDaily(): void {
+    try { this.lastDaily = JSON.parse(readFileSync(join(this.config.dataDir, "routines.json"), "utf8")); return; } catch { /* erster Start */ }
+    // Allererster Start: heute schon vergangene Zeitpunkte nicht nachholen
+    const now = berlinNow();
+    for (const t of this.config.mail_check_times) if (now.time >= t) this.lastDaily[`mail-${t}`] = now.date;
+    if (this.config.daily_brief && now.time >= this.config.daily_brief) this.lastDaily.brief = now.date;
   }
 
   private async tick(): Promise<void> {
@@ -119,12 +130,19 @@ export class Routines {
     if (this.config.daily_brief && now.time >= this.config.daily_brief && this.once("brief", now.date)) {
       this.run("briefing", () => this.brief(now.date));
       this.run("wiederkehrend", () => this.recurringItems(now.date));
-      if (this.config.mail_triage) this.run("mail", () => this.mailTriage());
       if (this.config.weekly_offers && now.weekday === 1) this.run("angebote", () => this.weeklyOffers());
       if (this.config.calendar_insights) this.run("kalender", () => this.calendarInsights());
     }
     if (this.config.calendar_insights && this.config.evening_check && now.time >= this.config.evening_check && this.once("abend", now.date)) {
       this.run("kalender", () => this.calendarInsights());
+    }
+    if (this.config.mail_triage) {
+      // Nur der jüngste fällige Zeitpunkt zählt (nach einem Ausfall nicht alle nachholen)
+      const due = [...this.config.mail_check_times].sort().filter((t) => now.time >= t).pop();
+      if (due && this.once(`mail-${due}`, now.date)) {
+        for (const t of this.config.mail_check_times) if (t < due) this.lastDaily[`mail-${t}`] = now.date;
+        this.run("mail", () => this.mailTriage());
+      }
     }
     if (now.time >= "06:30" && this.once("preise", now.date)) this.run("preise", () => this.priceWatches());
     if (now.time >= "10:15" && this.once("fints", now.date)) this.run("fints", () => this.fintsActivation(now.date));
@@ -392,13 +410,18 @@ export class Routines {
   }
 
   // ── Mail-Überblick ───────────────────────────────────────────────────────
+  private lastMailCheck = Date.now() - 12 * 3600_000;
+
   private async mailTriage(): Promise<void> {
+    const since = new Date(this.lastMailCheck);
+    this.lastMailCheck = Date.now();
+    const sinceText = since.toLocaleString("de-DE", { timeZone: "Europe/Berlin", weekday: "short", hour: "2-digit", minute: "2-digit" });
     for (const user of await this.adults()) {
       const ctx: ToolContext = { ...this.base, user };
       const tools = mailTools(ctx, "private", "communication").filter((t) => ["list_mailboxes", "list_mails", "read_mail"].includes(t.name));
       const summary = await runMiniAgent(this.config, {
         system: `Du bist der Communication-Agent und erstellst für ${user.name} einen kurzen Mail-Überblick. Du liest nur – nichts senden, verschieben oder markieren.`,
-        prompt: `Schau dir die ungelesenen Mails der letzten 24 Stunden in allen Postfächern an, die du für ${user.name} siehst.
+        prompt: `Schau dir die ungelesenen Mails seit ${sinceText} in allen Postfächern an, die du für ${user.name} siehst (ältere ignorieren).
 Fasse in höchstens 8 kurzen Zeilen zusammen:
 - ❗ Wichtig (Behörden, Fristen, Bank, Schule, Arzt …)
 - ✉️ Braucht eine Antwort (wer, worum)

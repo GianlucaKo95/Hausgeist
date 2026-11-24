@@ -41,6 +41,7 @@ const requireAdult = (u: AppUser) => { if (u.role === "child") throw new HttpErr
 const time = z.string().regex(/^(([01]\d|2[0-3]):[0-5]\d)?$/, "Uhrzeit im Format HH:MM");
 
 const SettingsBody = z.object({
+  mail_check_times: z.array(z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Uhrzeit im Format HH:MM")).max(12).optional(),
   departure_alerts: z.boolean().optional(),
   departure_buffer_min: z.number().int().min(0).max(60).optional(),
   travel_mode: z.enum(["car", "bike", "foot"]).optional(),
@@ -179,7 +180,7 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
         ha_entities: config.ha_entities, energy: config.energy, bring_lists: config.bring_lists,
         bring: { email: config.bring.email, password_set: Boolean(config.bring.password) },
         daily_brief: config.daily_brief, evening_check: config.evening_check, mail_triage: config.mail_triage,
-        weekly_offers: config.weekly_offers, calendar_insights: config.calendar_insights,
+        weekly_offers: config.weekly_offers, calendar_insights: config.calendar_insights, mail_check_times: config.mail_check_times,
         departure_alerts: config.departure_alerts, departure_buffer_min: config.departure_buffer_min, travel_mode: config.travel_mode,
         paperless_url: config.paperless_url, paperless_token_set: Boolean(config.paperless_token),
         push_enabled: Boolean(config.apns_key_id && config.apns_key),

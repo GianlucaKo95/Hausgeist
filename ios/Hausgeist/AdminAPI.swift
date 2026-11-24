@@ -70,6 +70,7 @@ struct AdminSettings: Codable {
     var departure_buffer_min: Int?
     var travel_mode: String?
     var bring: BringAccountInfo?
+    var mail_check_times: [String]?
 }
 
 struct FritzInfo: Codable, Hashable { var host: String; var user: String; var password_set: Bool }
@@ -125,6 +126,7 @@ struct SettingsPatch: Encodable {
     var departure_buffer_min: Int?
     var travel_mode: String?
     var bring: BringAccountSave?
+    var mail_check_times: [String]?
 }
 
 struct Mailbox: Codable, Identifiable, Hashable {

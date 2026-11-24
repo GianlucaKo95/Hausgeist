@@ -10,6 +10,7 @@ struct RoutinesView: View {
     @State private var bufferMin = 10
     @State private var travelMode = "car"
     @State private var mailTriage = true
+    @State private var mailTimes = "07:00, 12:00, 15:00, 19:00"
     @State private var weeklyOffers = true
     @State private var paperlessURL = ""
     @State private var paperlessToken = ""
@@ -29,7 +30,12 @@ struct RoutinesView: View {
                 if briefOn {
                     DatePicker("Uhrzeit", selection: timeBinding($dailyBrief), displayedComponents: .hourAndMinute)
                 }
-                Toggle("Mail-Überblick am Morgen", isOn: $mailTriage)
+                Toggle("Mail-Überblick", isOn: $mailTriage)
+                if mailTriage {
+                    LabeledContent("Uhrzeiten") {
+                        TextField("07:00, 12:00", text: $mailTimes).multilineTextAlignment(.trailing).keyboardType(.numbersAndPunctuation)
+                    }
+                }
             } header: {
                 Text("Morgens")
             } footer: {
@@ -92,6 +98,7 @@ struct RoutinesView: View {
             dailyBrief = s.daily_brief.isEmpty ? "07:30" : s.daily_brief
             eveningCheck = s.evening_check.isEmpty ? "18:00" : s.evening_check
             calendarInsights = s.calendar_insights; mailTriage = s.mail_triage; weeklyOffers = s.weekly_offers
+            if let t = s.mail_check_times { mailTimes = t.joined(separator: ", ") }
             departures = s.departure_alerts ?? true; bufferMin = s.departure_buffer_min ?? 10; travelMode = s.travel_mode ?? "car"
             paperlessURL = s.paperless_url; tokenSet = s.paperless_token_set; pushEnabled = s.push_enabled
             loaded = true
@@ -105,7 +112,8 @@ struct RoutinesView: View {
                 mail_triage: mailTriage, weekly_offers: weeklyOffers, calendar_insights: calendarInsights,
                 paperless_url: paperlessURL.trimmingCharacters(in: .whitespaces),
                 paperless_token: paperlessToken.isEmpty ? nil : paperlessToken,
-                departure_alerts: departures, departure_buffer_min: bufferMin, travel_mode: travelMode))
+                departure_alerts: departures, departure_buffer_min: bufferMin, travel_mode: travelMode,
+                mail_check_times: mailTimes.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }))
             if !paperlessToken.isEmpty { tokenSet = true; paperlessToken = "" }
             info = "Gespeichert"
             error = nil

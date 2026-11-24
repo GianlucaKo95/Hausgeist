@@ -104,6 +104,8 @@ export const Options = z.object({
     .regex(/^(([01]\d|2[0-3]):[0-5]\d)?$/, "daily_brief im Format HH:MM")
     .default("07:30"),
   mail_triage: z.boolean().default(true),
+  /** Uhrzeiten für den Mail-Überblick (Berliner Zeit) */
+  mail_check_times: z.array(z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/)).default(["07:00", "12:00", "15:00", "19:00"]),
   weekly_offers: z.boolean().default(true),
   log_level: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
@@ -138,6 +140,7 @@ export const AppSettings = z.object({
   daily_brief: time,
   evening_check: time,
   mail_triage: z.boolean(),
+  mail_check_times: z.array(z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/)),
   weekly_offers: z.boolean(),
   calendar_insights: z.boolean(),
   departure_alerts: z.boolean(),
