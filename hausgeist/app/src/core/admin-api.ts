@@ -67,7 +67,7 @@ const BankLoginBody = z.object({
 
 const MailboxBody = z.object({
   original_name: z.string().optional(),
-  name: z.string().regex(/^[\w\- äöüÄÖÜß]{1,40}$/, "Name: Buchstaben, Ziffern, Leerzeichen, - und _"),
+  name: z.string().trim().regex(/^[\w\- .@&+()äöüÄÖÜß]{1,40}$/, "Name: höchstens 40 Zeichen, keine Sonderzeichen wie / oder ?"),
   host: z.string().min(3),
   port: z.number().int().min(1).max(65535),
   tls: z.boolean(),
@@ -99,6 +99,16 @@ const AccountBody = z.object({
 });
 
 const PayeeBody = z.object({ name: z.string().min(1), iban: z.string(), default_account_id: z.string().uuid().nullable().optional() });
+
+/** iCloud-Mail nutzt dasselbe App-Passwort wie die iCloud-Kalender – dann muss man es nicht zweimal eingeben. */
+function icloudFallback(config: Config, host?: string, user?: string): string | undefined {
+  if (!host || !/(^|\.)mail\.me\.com$/i.test(host) || !config.icloud_app_password) return undefined;
+  const apple = (config.icloud_user ?? "").toLowerCase();
+  const u = (user ?? "").toLowerCase();
+  // iCloud-Mail-Login: Apple-ID oder der Teil vor @icloud.com/@me.com
+  if (!apple || u === apple || apple.startsWith(u + "@") || u.split("@")[0] === apple.split("@")[0]) return config.icloud_app_password;
+  return undefined;
+}
 
 async function imapTest(mb: { host: string; port: number; tls: boolean; user: string; password: string }): Promise<string[]> {
   const c = new ImapFlow({ host: mb.host, port: mb.port, secure: mb.tls, auth: { user: mb.user, pass: mb.password }, logger: false });
@@ -198,7 +208,7 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
         if (own?.owner_id !== user.id) throw new HttpError(403, "Nur eigene Postfächer.");
       }
       if (b.name !== original && config.mailboxes.some((x) => x.name === b.name)) throw new HttpError(409, "Name ist schon vergeben");
-      const password = b.password || existing?.password;
+      const password = b.password || existing?.password || icloudFallback(config, b.host, b.user);
       if (!password) throw new HttpError(400, "Passwort fehlt");
       const mb: MailboxConfig = {
         name: b.name, host: b.host, port: b.port, tls: b.tls, user: b.user, password,
@@ -231,7 +241,7 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
       requireAdult(user);
       const b = MailboxBody.partial().parse(await d.readBody(req));
       const saved = config.mailboxes.find((x) => x.name === (b.original_name ?? b.name));
-      const password = b.password || saved?.password;
+      const password = b.password || saved?.password || icloudFallback(config, b.host, b.user);
       if (!b.host || !b.port || b.tls === undefined || !b.user || !password) throw new HttpError(400, "Server, Port, Benutzer und Passwort angeben");
       let folders: string[];
       try {

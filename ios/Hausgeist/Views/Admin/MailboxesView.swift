@@ -92,6 +92,7 @@ struct MailboxForm: View {
     @State private var visibility = "private"
     @State private var scope = "private"
     @State private var hint: String?
+    @State private var icloudReuse = false
     @State private var testResult: String?
     @State private var error: String?
     @State private var busy = false
@@ -114,7 +115,8 @@ struct MailboxForm: View {
                     TextField("Name im Hausgeist, z. B. Privat", text: $name)
                     TextField("E-Mail / Benutzername", text: $user)
                         .keyboardType(.emailAddress).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    SecureField(box?.password_set == true ? "Passwort (unverändert lassen)" : "Passwort", text: $password)
+                    SecureField(box?.password_set == true ? "Passwort (unverändert lassen)"
+                                : icloudReuse ? "App-Passwort (aus Kalender)" : "Passwort", text: $password)
                     TextField("Absendername (optional)", text: $fromName)
                 }
                 Section("Posteingang (IMAP)") {
@@ -163,7 +165,7 @@ struct MailboxForm: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Sichern") { Task { await save() } }
-                        .disabled(busy || name.isEmpty || host.isEmpty || user.isEmpty || (box == nil && password.isEmpty))
+                        .disabled(busy || name.isEmpty || host.isEmpty || user.isEmpty || (box == nil && password.isEmpty && !icloudReuse))
                 }
             }
             .onAppear(perform: fill)
@@ -172,7 +174,8 @@ struct MailboxForm: View {
 
     private func fill() {
         guard let b = box else {
-            ownerId = me.role == "admin" ? (people.first { $0.name == me.name }?.id ?? "") : ""
+            // Neues Postfach gehört standardmäßig der Person, die es anlegt.
+            ownerId = me.id
             return
         }
         name = b.name; user = b.user; host = b.host; port = b.port; tls = b.tls
@@ -183,6 +186,15 @@ struct MailboxForm: View {
     private func apply(_ p: MailProvider) {
         host = p.imap; port = 993; tls = true; smtpHost = p.smtp; smtpPort = p.smtpPort; hint = p.hint
         if name.isEmpty { name = p.name }
+        icloudReuse = false
+        guard p.imap == "imap.mail.me.com", me.role == "admin" else { return }
+        // iCloud-Mail: Apple-ID und App-Passwort aus der Kalender-Einrichtung übernehmen
+        Task {
+            guard let s = try? await APIClient(auth: auth).adminSettings(), s.icloud_password_set, !s.icloud_user.isEmpty else { return }
+            if user.isEmpty { user = s.icloud_user }
+            icloudReuse = true
+            hint = "Apple-ID und App-Passwort werden aus der Kalender-Einrichtung übernommen – Passwort leer lassen."
+        }
     }
 
     private var payload: MailboxSave {
