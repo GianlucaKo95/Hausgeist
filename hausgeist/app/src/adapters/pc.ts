@@ -164,11 +164,15 @@ export async function discoverComputers(
   hosts: { name: string; ip: string; mac: string; active: boolean; connection: string }[],
   known: PcConfig[],
 ): Promise<DiscoveredComputer[]> {
-  const candidates = hosts.filter((h) => h.ip && (looksLikeComputer(h.name) || known.some((k) => k.mac && k.mac === h.mac.toUpperCase())));
-  return Promise.all(candidates.map(async (h) => {
+  // Nicht nur nach Gerätenamen gehen: jedes eingeschaltete Gerät wird auf SSH/Windows-Ports geprüft
+  const found = await Promise.all(hosts.filter((h) => h.ip).map(async (h) => {
+    const named = looksLikeComputer(h.name) || known.some((k) => k.mac && k.mac === h.mac.toUpperCase());
+    if (!h.active && !named) return null;
     const ssh = h.active ? await portOpen(h.ip, 22, 1200) : false;
     const windows = h.active ? (await portOpen(h.ip, 445, 800)) || (await portOpen(h.ip, 3389, 800)) : null;
+    if (!named && !ssh && !windows) return null;
     const configured = known.find((k) => k.host === h.ip || k.host.toLowerCase() === h.name.toLowerCase() || (k.mac && k.mac === h.mac.toUpperCase()));
     return { name: h.name, ip: h.ip, mac: h.mac.toUpperCase(), active: h.active, connection: h.connection, windows, ssh, configuredAs: configured?.name ?? null };
   }));
+  return found.filter((c): c is DiscoveredComputer => c !== null);
 }
