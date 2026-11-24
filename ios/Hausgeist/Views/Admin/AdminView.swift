@@ -20,6 +20,7 @@ struct AdminSection: View {
                     NavigationLink { BringView() } label: { Label("Einkaufslisten (Bring!)", systemImage: "cart") }
                     NavigationLink { NetworkPcView() } label: { Label("Netzwerk & PC", systemImage: "desktopcomputer") }
                     NavigationLink { TvView() } label: { Label("Fernseher (Couchpotato)", systemImage: "tv") }
+                    NavigationLink { PlannerView() } label: { Label("Familienplaner", systemImage: "calendar.badge.checkmark") }
                     NavigationLink { RoutinesView() } label: { Label("Routinen & Ablage", systemImage: "clock.arrow.circlepath") }
                 }
             } header: {

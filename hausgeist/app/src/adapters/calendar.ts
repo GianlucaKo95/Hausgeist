@@ -11,6 +11,12 @@ export interface CalendarEvent {
   end: string | null;
   allDay: boolean;
   location: string | null;
+  notes?: string | null;
+  uid?: string;
+  /** Serientermin (einzelne Vorkommen lassen sich hier nicht bearbeiten). */
+  recurring?: boolean;
+  /** Nur Apple-Kalender: Adresse des Kalenderobjekts – zum Ändern/Löschen. */
+  ref?: string;
 }
 
 /** Entfaltet gefaltete iCal-Zeilen und liest die wichtigsten Felder eines VEVENT. */
@@ -30,6 +36,9 @@ export function parseEvents(ical: string, calendar: string): CalendarEvent[] {
           end: cur.DTEND ? icalToBerlin(cur.DTEND.value, cur.DTEND.params) : null,
           allDay: start.params.includes("VALUE=DATE") && !start.params.includes("DATE-TIME"),
           location: cur.LOCATION ? unescape(cur.LOCATION.value) : null,
+          notes: cur.DESCRIPTION ? unescape(cur.DESCRIPTION.value) : null,
+          uid: cur.UID?.value,
+          recurring: Boolean(cur.RRULE || cur["RECURRENCE-ID"]),
         });
       }
       cur = null;
@@ -122,30 +131,86 @@ export class AppleCalendar {
     for (const cal of selected) {
       // expand: Der Server löst Serientermine (z. B. wöchentliches Training) in einzelne Termine auf.
       const objs = await client.fetchCalendarObjects({ calendar: cal, timeRange: { start: fromIso, end: toIso }, expand: true });
-      for (const o of objs) if (o.data) all.push(...parseEvents(String(o.data), String(cal.displayName ?? "")));
+      for (const o of objs) if (o.data) {
+        const evs = parseEvents(String(o.data), String(cal.displayName ?? ""));
+        const series = evs.length > 1;
+        all.push(...evs.map((e) => ({ ...e, ref: o.url, recurring: e.recurring || series })));
+      }
     }
     const t = (v: string) => new Date(v.length === 10 ? `${v}T00:00:00` : v).getTime();
     return all.sort((a, b) => t(a.start) - t(b.start));
   }
 
-  async createEvent(calendarName: string, ev: { title: string; start: string; end: string; location?: string | null; notes?: string | null }) {
+  async createEvent(calendarName: string, ev: EventInput) {
     const client = await this.connect();
     const cal = this.find(calendarName);
     const uid = randomUUID();
-    const ical = [
-      "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//KoeVen//Hausgeist//DE", "BEGIN:VEVENT",
-      `UID:${uid}`, `DTSTAMP:${toIcal(new Date().toISOString())}`,
-      `DTSTART:${toIcal(ev.start)}`, `DTEND:${toIcal(ev.end)}`, `SUMMARY:${escape(ev.title)}`,
-      ...(ev.location ? [`LOCATION:${escape(ev.location)}`] : []),
-      ...(ev.notes ? [`DESCRIPTION:${escape(ev.notes)}`] : []),
-      "END:VEVENT", "END:VCALENDAR",
-    ].join("\r\n");
-    const res = await client.createCalendarObject({ calendar: cal, iCalString: ical, filename: `${uid}.ics` });
+    const res = await client.createCalendarObject({ calendar: cal, iCalString: buildIcal(uid, ev), filename: `${uid}.ics` });
     if (!res.ok) throw new Error(`Termin anlegen fehlgeschlagen: ${res.status}`);
     return uid;
   }
+
+  /** Kalender, zu dem eine Objekt-Adresse gehört (nur aus den eigenen Apple-Kalendern). */
+  private owning(ref: string): DAVCalendar {
+    const cal = this.calendars.find((c) => ref.startsWith(c.url));
+    if (!cal) throw new Error("Termin gehört zu keinem verbundenen Apple-Kalender");
+    return cal;
+  }
+
+  private async object(ref: string) {
+    const client = await this.connect();
+    const cal = this.owning(ref);
+    const [obj] = await client.fetchCalendarObjects({ calendar: cal, objectUrls: [ref] });
+    if (!obj?.data) throw new Error("Termin nicht gefunden – wurde er schon gelöscht?");
+    if (/RRULE|RECURRENCE-ID/.test(String(obj.data))) throw new Error("Serientermine bitte direkt im Apple-Kalender ändern");
+    return { client, cal, obj };
+  }
+
+  async updateEvent(ref: string, ev: EventInput, moveTo?: string) {
+    const { client, cal, obj } = await this.object(ref);
+    const uid = String(obj.data).match(/^UID:(.+)$/m)?.[1]?.trim() ?? randomUUID();
+    const target = moveTo ? this.find(moveTo) : cal;
+    if (target.url !== cal.url) {
+      const c = await client.createCalendarObject({ calendar: target, iCalString: buildIcal(uid, ev), filename: `${uid}.ics` });
+      if (!c.ok) throw new Error(`Termin verschieben fehlgeschlagen: ${c.status}`);
+      await client.deleteCalendarObject({ calendarObject: { url: obj.url, etag: obj.etag } });
+      return;
+    }
+    const res = await client.updateCalendarObject({ calendarObject: { url: obj.url, etag: obj.etag, data: buildIcal(uid, ev) } });
+    if (!res.ok) throw new Error(`Termin ändern fehlgeschlagen: ${res.status}`);
+  }
+
+  async deleteEvent(ref: string) {
+    const { client, obj } = await this.object(ref);
+    const res = await client.deleteCalendarObject({ calendarObject: { url: obj.url, etag: obj.etag } });
+    if (!res.ok && res.status !== 404) throw new Error(`Termin löschen fehlgeschlagen: ${res.status}`);
+  }
 }
 
+
+export interface EventInput { title: string; start: string; end: string; location?: string | null; notes?: string | null; allDay?: boolean }
+
+function icalDay(d: string): string { return d.slice(0, 10).replace(/-/g, ""); }
+
+/** iCal für einen einzelnen Termin – ganztägig als Datum (Ende exklusiv), sonst als UTC-Zeitpunkt. */
+export function buildIcal(uid: string, ev: EventInput): string {
+  let times: string[];
+  if (ev.allDay) {
+    const start = ev.start.slice(0, 10);
+    let end = ev.end.slice(0, 10);
+    if (end <= start) { const d = new Date(`${start}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + 1); end = d.toISOString().slice(0, 10); }
+    times = [`DTSTART;VALUE=DATE:${icalDay(start)}`, `DTEND;VALUE=DATE:${icalDay(end)}`];
+  } else {
+    times = [`DTSTART:${toIcal(ev.start)}`, `DTEND:${toIcal(ev.end)}`];
+  }
+  return [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//KoeVen//Hausgeist//DE", "BEGIN:VEVENT",
+    `UID:${uid}`, `DTSTAMP:${toIcal(new Date().toISOString())}`, ...times, `SUMMARY:${escape(ev.title)}`,
+    ...(ev.location ? [`LOCATION:${escape(ev.location)}`] : []),
+    ...(ev.notes ? [`DESCRIPTION:${escape(ev.notes)}`] : []),
+    "END:VEVENT", "END:VCALENDAR",
+  ].join("\r\n");
+}
 
 /** Liegt ein Termin (ganztägig oder mit Uhrzeit) im Zeitraum? */
 export function inRange(ev: CalendarEvent, fromIso: string, toIso: string): boolean {

@@ -1,7 +1,7 @@
 // Reine Prüflogik ohne Seiteneffekte – bewusst getrennt, damit sie testbar ist
 // und kein Sprachmodell an Freigabe- oder Zahlungsentscheidungen beteiligt ist.
 
-export type Role = "admin" | "adult" | "child";
+export type Role = "admin" | "adult" | "child" | "family";
 
 export interface AppUser {
   id: string;
@@ -64,6 +64,7 @@ export type ApprovalDecision = { allowed: true } | { allowed: false; reason: str
  */
 export function canApprove(user: AppUser, req: ApprovalRequest): ApprovalDecision {
   if (user.role === "child") return { allowed: false, reason: "Kinder können keine Zahlungen freigeben." };
+  if (user.role === "family") return { allowed: false, reason: "Der Familienaccount kann nichts freigeben." };
   if (req.payee_status !== "known" && user.role !== "admin")
     return { allowed: false, reason: "Neue oder geänderte IBAN – nur der Admin kann freigeben." };
   if (user.role === "adult" && req.amount_cents > user.approval_limit_cents)
@@ -106,6 +107,7 @@ export function canApproveAction(
   action: { kind: ActionKind; amount_cents: number | null; mailbox_owner_id?: string | null },
 ): ApprovalDecision {
   if (user.role === "child") return { allowed: false, reason: "Kinder können keine Aktionen freigeben." };
+  if (user.role === "family") return { allowed: false, reason: "Der Familienaccount kann nichts freigeben." };
   if ((action.kind === "pc_command" || action.kind === "fritz_reboot") && user.role !== "admin")
     return { allowed: false, reason: "Befehle am PC und an der FRITZ!Box kann nur der Admin freigeben." };
   if ((action.kind === "order" || action.kind === "booking") && user.role === "adult" && (action.amount_cents ?? 0) > user.approval_limit_cents)

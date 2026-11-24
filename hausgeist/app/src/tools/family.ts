@@ -77,7 +77,8 @@ export function familyTools(ctx: ToolContext) {
     }, safe(async (a) => {
       if (!ctx.calendar.apple.enabled) throw new Error("Apple-Kalender ist nicht konfiguriert – eintragen geht nur dort");
       const owner = ownerOf(a.calendar);
-      const mine = owner === "shared" || owner?.toLowerCase() === ctx.user.name.toLowerCase();
+      // Der Familienplaner darf in alle Kalender schreiben (gemeinsames Familienbrett)
+      const mine = ctx.user.role === "family" || owner === "shared" || owner?.toLowerCase() === ctx.user.name.toLowerCase();
       const ev = { calendar: a.calendar, title: a.title, start: berlinIso(parseBerlin(a.start)), end: berlinIso(parseBerlin(a.end)), location: a.location ?? null, notes: a.notes ?? null };
       if (mine) {
         await ctx.calendar.apple.createEvent(a.calendar, ev);

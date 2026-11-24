@@ -339,7 +339,7 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
     // ── Personen ─────────────────────────────────────────────────────────
     if (route === "users" && method === "GET") {
       requireAdult(user);
-      const { data, error } = await db().from("users").select("id, name, role, email, approval_limit_cents, auth_user_id").order("created_at");
+      const { data, error } = await db().from("users").select("id, name, role, email, approval_limit_cents, auth_user_id").neq("role", "family").order("created_at");
       if (error) throw error;
       json(res, 200, (data ?? []).map((u) => ({ ...u, auth_user_id: undefined, has_login: Boolean(u.auth_user_id) })));
       return true;

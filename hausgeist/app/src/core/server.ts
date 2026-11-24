@@ -21,6 +21,10 @@ import { places, zoneAt, type Positions } from "./location.js";
 import { logger } from "./log.js";
 import { CHAT_PAGE } from "./chat-page.js";
 import type { TvHub } from "./tv-hub.js";
+import { PLANNER_TOKEN_PREFIX, type PlannerLink } from "./planner-link.js";
+import { handlePlanner } from "./planner-api.js";
+import type { CalendarHub } from "../adapters/calendar.js";
+import type { ShoppingList } from "./shopping-list.js";
 
 const log = logger("server");
 
@@ -80,9 +84,10 @@ async function userFromSupabaseToken(token: string): Promise<AppUser | null> {
  * - App: Authorization: Bearer <Supabase-Access-Token>
  * - Ingress: Home Assistant setzt X-Remote-User-Id.
  */
-export function startServer(config: Config, master: MasterAgent, finance: FinanceAgent, actions: ActionService, ha: HomeAssistant, settings: SettingsStore, fints: FinTSProvider, it: { fritz: FritzBox; pc: WindowsPc; positions: Positions; bring: BringClient; tv: TvHub }): void {
+export function startServer(config: Config, master: MasterAgent, finance: FinanceAgent, actions: ActionService, ha: HomeAssistant, settings: SettingsStore, fints: FinTSProvider, it: { fritz: FritzBox; pc: WindowsPc; positions: Positions; bring: BringClient; tv: TvHub; planner: PlannerLink; calendar: CalendarHub; shopping: ShoppingList }): void {
   const resolveUser = async (req: IncomingMessage): Promise<AppUser | null> => {
     const auth = req.headers.authorization ?? "";
+    if (auth.startsWith(`Bearer ${PLANNER_TOKEN_PREFIX}`)) return it.planner.authenticate(auth.slice(7));
     if (auth.startsWith("Bearer ")) return userFromSupabaseToken(auth.slice(7));
     // Ingress-Anfragen kommen nur vom Supervisor (172.30.32.2) und tragen die HA-Benutzer-ID.
     const fromSupervisor = (req.socket.remoteAddress ?? "").endsWith("172.30.32.2");
@@ -109,6 +114,24 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(CHAT_PAGE);
         return;
+      }
+      // Familienplaner läuft im Browser auf einer anderen Adresse – Anmeldung nur per Schlüssel, keine Cookies
+      if (path.includes("/api/")) {
+        res.setHeader("Access-Control-Allow-Origin", "*");
+        res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+        res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+        res.setHeader("Access-Control-Max-Age", "86400");
+        if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
+      }
+      // Familienplaner koppeln (ohne Anmeldung, gebremst)
+      if (path.includes("/api/planner-pair")) {
+        const rest = path.slice(path.indexOf("/api/planner-pair") + 17);
+        try {
+          if (req.method === "POST" && rest === "") { const b = await readBody(req); return json(res, 200, it.planner.startPairing(String(b.name ?? ""))); }
+          const pm = rest.match(/^\/([\w-]{36})$/);
+          if (req.method === "GET" && pm) return json(res, 200, it.planner.pollPairing(pm[1]));
+        } catch (e) { return json(res, (e as { status?: number }).status ?? 400, { error: (e as Error).message }); }
+        return json(res, 404, { error: "Unbekannt" });
       }
       if (path.endsWith("/api/health")) return json(res, 200, { ok: true, version: process.env.HAUSGEIST_VERSION ?? "dev" });
 
@@ -145,6 +168,11 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
       if (!user) return json(res, 401, { error: "Nicht angemeldet oder nicht als Haushaltsmitglied eingetragen." });
 
       if (req.method === "GET" && path.endsWith("/api/me")) return json(res, 200, { id: user.id, name: user.name, role: user.role });
+
+      if (await handlePlanner(req, res, path, url, user, { calendar: it.calendar, shopping: it.shopping, json, readBody: (r) => readBody(r) })) return;
+      // Familienaccount: nur Chat, Gesprächsverlauf und Planer – nichts Persönliches, keine Freigaben
+      if (user.role === "family" && !/\/api\/(chat|conversations|reset)(\/|$)/.test(path))
+        return json(res, 403, { error: "Über den Familienplaner nicht verfügbar – bitte die Hausgeist-App nutzen." });
 
       if (req.method === "POST" && path.endsWith("/api/reset")) {
         master.resetSession(user.id);
@@ -342,6 +370,23 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
         if (typeof body.approve !== "boolean") return json(res, 400, { error: "approve (true/false) fehlt" });
         const r = m[1] === "payment" ? await finance.decide(user, m[2], body.approve) : await actions.decide(user, m[2], body.approve);
         return json(res, r.ok ? 200 : 409, r);
+      }
+
+      // Familienplaner-Geräte verwalten (Admin)
+      if (path.includes("/api/admin/planner")) {
+        if (user.role !== "admin") return json(res, 403, { error: "Nur für den Admin." });
+        const rest = path.slice(path.indexOf("/api/admin/planner") + 18);
+        try {
+          if (req.method === "GET" && rest === "") return json(res, 200, { devices: it.planner.list() });
+          if (req.method === "POST" && rest === "/confirm") {
+            const b = await readBody(req);
+            return json(res, 200, it.planner.confirm(String(b.code ?? ""), typeof b.name === "string" ? b.name : undefined));
+          }
+          const m = rest.match(/^\/([\w-]{36})$/);
+          if (m && req.method === "DELETE") { it.planner.remove(m[1]); return json(res, 200, { ok: true }); }
+          if (m && req.method === "PUT") { const b = await readBody(req); it.planner.rename(m[1], String(b.name ?? "")); return json(res, 200, { ok: true }); }
+        } catch (e) { return json(res, 400, { error: (e as Error).message }); }
+        return json(res, 404, { error: "Unbekannt" });
       }
 
       // Fernseher verwalten (Admin)
