@@ -1,5 +1,5 @@
 name: Hausgeist
-version: "0.9.2"
+version: "0.9.3"
 slug: hausgeist
 description: Persönliches Agenten-Netzwerk mit Master-Agent und acht Fachagenten
 url: https://github.com/GianlucaKo95/hausgeist
@@ -9,6 +9,7 @@ arch:
 init: false
 ingress: true
 ingress_port: 8099
+watchdog: "http://[HOST]:[PORT:8099]/api/health"
 panel_icon: mdi:ghost
 panel_title: Hausgeist
 ports:

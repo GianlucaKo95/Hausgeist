@@ -110,7 +110,8 @@ export class HomeAssistant {
       const ws = new WebSocket(this.config.haWsUrl);
       const timer = setTimeout(() => { ws.terminate(); reject(new Error(`${type}: Zeitüberschreitung`)); }, 15_000);
       ws.on("message", (raw) => {
-        const msg = JSON.parse(raw.toString());
+        let msg: any;
+        try { msg = JSON.parse(raw.toString()); } catch { return; }
         if (msg.type === "auth_required") ws.send(JSON.stringify({ type: "auth", access_token: this.config.supervisorToken }));
         else if (msg.type === "auth_ok") ws.send(JSON.stringify({ id: 1, type, ...extra }));
         else if (msg.type === "auth_invalid") { clearTimeout(timer); ws.close(); reject(new Error("Token abgelehnt")); }
@@ -147,19 +148,29 @@ export class HomeAssistant {
    */
   onNotificationAction(handler: (action: string, haUserId: string | null) => void): void {
     let retry = 1000;
+    let rejected = 0;
     const connect = () => {
       const ws = new WebSocket(this.config.haWsUrl);
       let nextId = 1;
       ws.on("message", (raw) => {
-        const msg = JSON.parse(raw.toString());
+        let msg: any;
+        try { msg = JSON.parse(raw.toString()); } catch { return; }
         if (msg.type === "auth_required") {
           ws.send(JSON.stringify({ type: "auth", access_token: this.config.supervisorToken }));
         } else if (msg.type === "auth_ok") {
           retry = 1000;
+          rejected = 0;
           ws.send(JSON.stringify({ id: nextId++, type: "subscribe_events", event_type: "mobile_app_notification_action" }));
           log.info("Verbunden, warte auf Freigaben");
         } else if (msg.type === "auth_invalid") {
-          log.error("Home Assistant hat das Token abgelehnt");
+          rejected++;
+          log.error(`Home Assistant hat das Token abgelehnt (${rejected}. Mal)`);
+          if (rejected >= 3) {
+            // Das Token vergibt der Supervisor beim Start des Add-ons. Ist es dauerhaft ungültig
+            // (z. B. nach einem Supervisor-Update), hilft nur ein Neustart – den übernimmt der Watchdog.
+            log.error("Token bleibt ungültig – starte neu, um ein frisches Token zu erhalten");
+            setTimeout(() => process.exit(1), 500);
+          }
         } else if (msg.type === "event") {
           const ev = msg.event;
           handler(String(ev?.data?.action ?? ""), ev?.context?.user_id ?? null);

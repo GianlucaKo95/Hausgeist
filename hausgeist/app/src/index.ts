@@ -76,6 +76,13 @@ async function main() {
   log.info(`Hausgeist läuft (Zahlungsmodus: ${payments.name})`);
 }
 
+// Ein einzelner Fehler (z. B. eine kurz nicht erreichbare Schnittstelle) darf den Dienst nicht beenden.
+process.on("unhandledRejection", (e) => log.error("Unbehandelter Fehler (Dienst läuft weiter)", e));
+process.on("uncaughtException", (e) => {
+  log.error("Schwerer Fehler – Neustart durch den Watchdog", e);
+  setTimeout(() => process.exit(1), 500);
+});
+
 main().catch((e) => {
   log.error("Start fehlgeschlagen", e);
   process.exit(1);
