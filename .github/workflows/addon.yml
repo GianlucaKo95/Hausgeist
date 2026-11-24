@@ -24,20 +24,52 @@ jobs:
       - run: npm test
 
   docker:
-    # Baut das Image wie Home Assistant auf dem Pi – auf einem echten ARM-Runner,
-    # nicht per Emulation (die war bei npm ci extrem langsam bzw. blieb hängen).
-    runs-on: ubuntu-24.04-arm
+    # Fertiges Image je Architektur auf echten Runnern bauen und (auf main) nach ghcr.io laden.
+    # Home Assistant lädt es dann nur noch herunter, statt auf dem Pi selbst zu bauen.
+    strategy:
+      matrix:
+        include:
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+          - arch: amd64
+            runner: ubuntu-latest
+            platform: linux/amd64
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     needs: test
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
+      - name: Version lesen
+        id: v
+        run: |
+          v=$(sed -nE 's/^version: *"?([^"]+)"?/\1/p' hausgeist/config.yaml)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v3
-      - name: Image für aarch64 bauen
+      - name: Bei ghcr.io anmelden
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Image für ${{ matrix.arch }} bauen
         uses: docker/build-push-action@v6
         with:
           context: hausgeist
-          platforms: linux/arm64
-          build-args: BUILD_FROM=ghcr.io/home-assistant/aarch64-base:3.21
-          push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          platforms: ${{ matrix.platform }}
+          build-args: BUILD_FROM=ghcr.io/home-assistant/${{ matrix.arch }}-base:3.21
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: |
+            ghcr.io/gianlucako95/hausgeist-${{ matrix.arch }}:${{ steps.v.outputs.version }}
+            ghcr.io/gianlucako95/hausgeist-${{ matrix.arch }}:latest
+          labels: |
+            io.hass.version=${{ steps.v.outputs.version }}
+            io.hass.type=addon
+            io.hass.arch=${{ matrix.arch }}
+            org.opencontainers.image.source=https://github.com/GianlucaKo95/Hausgeist
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
