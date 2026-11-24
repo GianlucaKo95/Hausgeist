@@ -85,12 +85,13 @@ struct APIClient {
     func chatStart(_ message: String, attachments: [ChatAttachment] = []) async throws -> (reply: String?, jobId: String?) {
         if AppConfig.isDemo { return (DemoData.reply, nil) }
         struct File: Encodable { let name: String; let mime: String; let data: String }
-        struct Body: Encodable { let message: String; let attachments: [File]; let async: Bool }
-        struct R: Decodable { let reply: String?; let job_id: String? }
+        struct Body: Encodable { let message: String; let attachments: [File]; let async: Bool; let conversation_id: String? }
+        struct R: Decodable { let reply: String?; let job_id: String?; let conversation_id: String? }
         let body = Body(message: message, attachments: attachments.map {
             File(name: $0.name, mime: $0.mime, data: $0.data.base64EncodedString())
-        }, async: true)
+        }, async: true, conversation_id: UserDefaults.standard.string(forKey: "conversationId"))
         let r: R = try await request("api/chat", method: "POST", body: body)
+        if let c = r.conversation_id { UserDefaults.standard.set(c, forKey: "conversationId") }
         return (r.reply, r.job_id)
     }
 
@@ -107,9 +108,52 @@ struct APIClient {
         return r.jobs.map(\.id)
     }
 
+    // MARK: Gesprächsverlauf
+
+    struct ConversationInfo: Decodable, Identifiable, Hashable {
+        let id: String
+        let title: String
+        let updated_at: String
+        let messages: Int
+        let current: Bool
+        var date: Date? { ISO8601DateFormatter.flexible.date(from: updated_at) ?? ISO8601DateFormatter().date(from: updated_at) }
+    }
+
+    func conversations() async throws -> [ConversationInfo] {
+        if AppConfig.isDemo {
+            return [ConversationInfo(id: "d1", title: "Welche Verträge kann ich bald kündigen?", updated_at: "2026-11-24T08:00:00Z", messages: 4, current: true),
+                    ConversationInfo(id: "d2", title: "Hotel in Rom für Ostern", updated_at: "2026-11-20T18:30:00Z", messages: 6, current: false)]
+        }
+        struct R: Decodable { let conversations: [ConversationInfo] }
+        let r: R = try await request("api/conversations")
+        return r.conversations
+    }
+
+    func conversationMessages(_ id: String) async throws -> [ChatMessage] {
+        if AppConfig.isDemo { return DemoData.chat }
+        struct M: Decodable { let sender: String; let text: String }
+        struct R: Decodable { let messages: [M] }
+        let r: R = try await request("api/conversations/\(id)")
+        return r.messages.map { ChatMessage(sender: ChatMessage.Sender(rawValue: $0.sender) ?? .ghost, text: $0.text) }
+    }
+
+    func openConversation(_ id: String) async throws {
+        if AppConfig.isDemo { return }
+        struct R: Decodable { let ok: Bool }
+        let _: R = try await request("api/conversations/\(id)/open", method: "POST", body: [String: String]())
+        UserDefaults.standard.set(id, forKey: "conversationId")
+    }
+
+    func deleteConversation(_ id: String) async throws {
+        if AppConfig.isDemo { return }
+        struct R: Decodable { let ok: Bool }
+        let _: R = try await request("api/conversations/\(id)", method: "DELETE")
+    }
+
     func reset() async throws {
         struct R: Decodable { let ok: Bool }
         let _: R = try await request("api/reset", method: "POST", body: [String: String]())
+        UserDefaults.standard.removeObject(forKey: "conversationId")
     }
 
     func registerDevice(token: String, environment: String) async throws {
@@ -169,4 +213,14 @@ struct APIClient {
         let msg = (try? JSONDecoder().decode(ServerError.self, from: data))?.error ?? ""
         throw APIError.http(status, msg)
     }
+}
+
+
+extension ISO8601DateFormatter {
+    /// Supabase liefert Zeitstempel mit Sekundenbruchteilen.
+    static let flexible: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
 }

@@ -107,6 +107,8 @@ Du buchst nie selbst und gibst nie Zahlungsdaten ein. Eine Anfrage per Mail ans 
  * Ergebnisse und merkt sich Präferenzen. Jeder Fachagent bekommt nur seine
  * eigenen Werkzeuge.
  */
+export interface ChatSession { id?: string | null; save: (sessionId: string) => Promise<void> }
+
 export class MasterAgent {
   private readonly sessionsPath: string;
   private readonly workDir: string;
@@ -155,17 +157,21 @@ Deine Aufgabe:
 ${SAFETY}`;
   }
 
-  async chat(user: AppUser, message: string, attachments: ChatAttachment[] = []): Promise<string> {
+  /**
+   * session: Agent-Sitzung des Gesprächs (aus dem Verlauf) – id zum Fortsetzen, save speichert die neue.
+   * Ohne session gilt die bisherige Sitzung je Person.
+   */
+  async chat(user: AppUser, message: string, attachments: ChatAttachment[] = [], session?: ChatSession): Promise<string> {
     if (this.busy.has(user.id)) return "Ich arbeite noch an deiner letzten Anfrage – einen Moment bitte.";
     this.busy.add(user.id);
     try {
-      return await this.run(user, message, attachments);
+      return await this.run(user, message, attachments, session);
     } finally {
       this.busy.delete(user.id);
     }
   }
 
-  private async run(user: AppUser, message: string, attachments: ChatAttachment[]): Promise<string> {
+  private async run(user: AppUser, message: string, attachments: ChatAttachment[], session?: ChatSession): Promise<string> {
     const ctx: ToolContext = { ...this.base, user };
     const childAllowed = new Set(["family", "shopping", "research"]);
     const as = (t: unknown[]) => t as AnyTool[];
@@ -236,7 +242,7 @@ ${SAFETY}`;
         agents,
         cwd: this.workDir,
         maxTurns: 40,
-        resume: sessions[user.id],
+        resume: session ? (session.id ?? undefined) : sessions[user.id],
         env: {
           ...process.env,
           ANTHROPIC_API_KEY: this.config.anthropic_api_key,
@@ -254,7 +260,9 @@ ${SAFETY}`;
         await audit({ agent: "master", action: "chat", level: 0, user_id: user.id, result: m.subtype, detail: { turns: m.num_turns, cost_usd: m.total_cost_usd } });
       }
     }
-    if (sessionId) {
+    if (sessionId && session) {
+      await session.save(sessionId);
+    } else if (sessionId) {
       const s = this.sessions();
       s[user.id] = sessionId;
       writeFileSync(this.sessionsPath, JSON.stringify(s));

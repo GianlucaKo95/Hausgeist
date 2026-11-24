@@ -46,6 +46,7 @@ struct ChatView: View {
     @State private var showScanner = false
     @State private var showFiles = false
     @State private var attachError: String?
+    @State private var showHistory = false
 
     @State private var speech = SpeechInput()
     @State private var conversation = false
@@ -99,7 +100,16 @@ struct ChatView: View {
                 }
             }
             .task(id: conversation) { await conversationLoop() }
-            .task { await resumePending() }
+            .task {
+                if AppConfig.isDemo && AppConfig.launchArg("-history") != nil { showHistory = true }
+                await resumePending()
+            }
+            .sheet(isPresented: $showHistory) {
+                ConversationsView { _, msgs in
+                    Speaker.shared.stop()
+                    messages = msgs
+                }
+            }
             .onChange(of: scenePhase) { if scenePhase == .active { Task { await resumePending() } } }
             .onChange(of: messages) { if !AppConfig.isDemo { ChatStore.save(messages) } }
             .onChange(of: speech.transcript) {
@@ -138,7 +148,9 @@ struct ChatView: View {
                     }
                     .tint(conversation ? .red : .accentColor)
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button("Verlauf", systemImage: "clock.arrow.circlepath") { showHistory = true }
+                        .disabled(busy)
                     Button("Neu", systemImage: "square.and.pencil") { Task { await reset() } }
                         .disabled(busy)
                 }

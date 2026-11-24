@@ -11,6 +11,7 @@ import type { HomeAssistant } from "../adapters/homeassistant.js";
 import type { SettingsStore } from "./settings.js";
 import { handleAdmin } from "./admin-api.js";
 import { ChatJobs } from "./chat-jobs.js";
+import { Conversations } from "./conversations.js";
 import type { FinTSProvider } from "../adapters/payment.js";
 import { logger } from "./log.js";
 import { CHAT_PAGE } from "./chat-page.js";
@@ -84,6 +85,7 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
     return null;
   };
 
+  const conversations = new Conversations(config.dataDir);
   const jobs = new ChatJobs(async (job) => {
     const target = (await listUsers()).find((u) => u.id === job.userId);
     if (!target?.notify_service) return;
@@ -100,7 +102,7 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
         res.end(CHAT_PAGE);
         return;
       }
-      if (path.endsWith("/api/health")) return json(res, 200, { ok: true, version: "0.10.2" });
+      if (path.endsWith("/api/health")) return json(res, 200, { ok: true, version: "0.11.0" });
 
       const user = await resolveUser(req);
       if (!user) return json(res, 401, { error: "Nicht angemeldet oder nicht als Haushaltsmitglied eingetragen." });
@@ -109,6 +111,7 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
 
       if (req.method === "POST" && path.endsWith("/api/reset")) {
         master.resetSession(user.id);
+        conversations.startNew(user.id);
         return json(res, 200, { ok: true });
       }
 
@@ -129,15 +132,25 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
           attachments.push({ uploadId: up.id, name, mime, data });
         }
         if (!message && attachments.length === 0) return json(res, 400, { error: "message fehlt" });
-        const work = master.chat(user, message.slice(0, 8000), attachments);
+        // Gesprächsverlauf: Nachricht ins gewünschte bzw. aktuelle Gespräch, Antwort ebenso.
+        const conv = await conversations.resolve(user.id, typeof body.conversation_id === "string" ? body.conversation_id : null);
+        const shown = [message, ...attachments.map((a) => `📎 ${a.name}`)].filter(Boolean).join("\n");
+        await conversations.add(conv, "me", shown);
+        const work = master.chat(user, message.slice(0, 8000), attachments, {
+          id: conv.session_id,
+          save: (sid) => conversations.setSession(conv, sid),
+        }).then(
+          async (reply) => { await conversations.add(conv, "ghost", reply).catch(() => undefined); return reply; },
+          async (e) => { await conversations.add(conv, "error", e instanceof Error ? e.message : String(e)).catch(() => undefined); throw e; },
+        );
 
         // App: Anfrage als Auftrag – läuft weiter, auch wenn die App in den Hintergrund geht.
         if (body.async === true) {
           const job = jobs.start(user.id, work);
           const done = await jobs.wait(job.id, user.id, 25_000);
-          if (done && done.status === "done") return json(res, 200, { reply: done.reply, job_id: job.id });
-          if (done && done.status === "error") return json(res, 500, { error: done.error, job_id: job.id });
-          return json(res, 200, { pending: true, job_id: job.id });
+          if (done && done.status === "done") return json(res, 200, { reply: done.reply, job_id: job.id, conversation_id: conv.id });
+          if (done && done.status === "error") return json(res, 500, { error: done.error, job_id: job.id, conversation_id: conv.id });
+          return json(res, 200, { pending: true, job_id: job.id, conversation_id: conv.id });
         }
 
         // Siri & Co. können nicht lange warten: nach 20 s kommt die Antwort per Mitteilung.
@@ -151,6 +164,25 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
           return json(res, 200, { reply: "Das dauert etwas länger – ich schicke dir die Antwort als Mitteilung.", pending: true });
         }
         return json(res, 200, { reply: await work });
+      }
+
+      // ── Gesprächsverlauf ──────────────────────────────────────────────
+      if (req.method === "GET" && path.endsWith("/api/conversations")) {
+        return json(res, 200, { conversations: await conversations.list(user.id) });
+      }
+      const convMatch = path.match(/\/api\/conversations\/([0-9a-f-]{36})(\/open)?$/);
+      if (convMatch && req.method === "GET") {
+        const msgs = await conversations.messages(convMatch[1], user.id);
+        return msgs ? json(res, 200, { messages: msgs }) : json(res, 404, { error: "Gespräch nicht gefunden" });
+      }
+      if (convMatch && convMatch[2] && req.method === "POST") {
+        const c = await conversations.get(convMatch[1], user.id);
+        if (!c) return json(res, 404, { error: "Gespräch nicht gefunden" });
+        await conversations.resolve(user.id, c.id);
+        return json(res, 200, { ok: true });
+      }
+      if (convMatch && req.method === "DELETE") {
+        return (await conversations.remove(convMatch[1], user.id)) ? json(res, 200, { ok: true }) : json(res, 404, { error: "Gespräch nicht gefunden" });
       }
 
       const jobMatch = path.match(/\/api\/chat\/jobs\/([0-9a-f-]{36})$/);
