@@ -107,7 +107,7 @@ export function familyTools(ctx: ToolContext) {
       return ok("Erledigt");
     })),
 
-    tool("remind", "Erinnerung als Push an eine Person aus dem Haushalt schicken.", {
+    tool("remind", "Sofort eine Push-Nachricht an eine Person aus dem Haushalt schicken (für spätere Zeitpunkte create_reminder).", {
       person: z.string().describe("Name laut Nutzerliste"),
       message: z.string(),
     }, safe(async (a) => {
@@ -118,20 +118,25 @@ export function familyTools(ctx: ToolContext) {
       return ok(`Erinnerung an ${data.name} geschickt`);
     })),
 
-    tool("create_reminder", "Erinnerung zu einem Zeitpunkt anlegen, optional wiederkehrend. Standard: für die fragende Person.", {
+    tool("create_reminder", "Erinnerung zu einem Zeitpunkt anlegen, optional wiederkehrend. Standard: für die fragende Person. Für „in X Minuten/Stunden“ immer in_minutes nutzen statt selbst zu rechnen.", {
       message: z.string(),
-      at: z.string().describe("ISO-Zeit mit Zeitzone, z. B. 2026-11-23T08:00:00+01:00"),
+      in_minutes: z.number().int().min(1).max(60 * 24 * 30).optional().describe("Relativ ab jetzt, z. B. 3 für „in 3 Minuten“"),
+      at: z.string().optional().describe("Absolut: ISO-Zeit mit Zeitzone, z. B. 2026-11-23T08:00:00+01:00"),
       person: z.string().optional().describe("Name aus dem Haushalt, falls jemand anderes erinnert werden soll"),
       repeat: z.enum(["none", "daily", "weekly", "monthly", "yearly"]).default("none"),
     }, safe(async (a) => {
-      const due = new Date(a.at);
+      const nowText = new Date().toLocaleString("de-DE", { timeZone: "Europe/Berlin", dateStyle: "short", timeStyle: "short" });
+      if (a.in_minutes === undefined && !a.at) throw new Error("in_minutes oder at angeben");
+      const due = a.in_minutes !== undefined ? new Date(Date.now() + a.in_minutes * 60_000) : new Date(a.at!);
       if (Number.isNaN(due.getTime())) throw new Error("Zeitpunkt nicht lesbar");
+      // Schutz vor falsch berechneten Zeiten: Vergangenheit ablehnen statt still sofort auszulösen
+      if (due.getTime() < Date.now() - 60_000) throw new Error(`Der Zeitpunkt liegt in der Vergangenheit – jetzt ist ${nowText}. Für „in X Minuten“ in_minutes verwenden.`);
       const target = a.person ? await findUser(a.person) : { id: ctx.user.id, name: ctx.user.name };
       if (ctx.user.role === "child" && target.id !== ctx.user.id) throw new Error("Kinder können nur sich selbst erinnern");
-      const { error } = await db().from("reminders").insert({ user_id: target.id, message: a.message, due_at: due.toISOString(), repeat: a.repeat, created_by: ctx.user.id });
+      const { data: row, error } = await db().from("reminders").insert({ user_id: target.id, message: a.message, due_at: due.toISOString(), repeat: a.repeat, created_by: ctx.user.id }).select("id").single();
       if (error) throw error;
       const when = due.toLocaleString("de-DE", { timeZone: "Europe/Berlin", dateStyle: "short", timeStyle: "short" });
-      return ok(`Erinnerung für ${target.name} am ${when}${a.repeat !== "none" ? ` (${a.repeat})` : ""}`);
+      return ok(`Erinnerung ${row.id} für ${target.name} am ${when}${a.repeat !== "none" ? ` (${a.repeat})` : ""} – kommt als Push. (Jetzt ist ${nowText}.)`);
     })),
 
     tool("list_reminders", "Offene Erinnerungen (eigene; Erwachsene sehen alle).", {}, safe(async () => {

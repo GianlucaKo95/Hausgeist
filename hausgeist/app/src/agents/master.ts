@@ -119,6 +119,10 @@ Du buchst nie selbst und gibst nie Zahlungsdaten ein. Eine Anfrage per Mail ans 
  * Ergebnisse und merkt sich Präferenzen. Jeder Fachagent bekommt nur seine
  * eigenen Werkzeuge.
  */
+function nowBerlin(): string {
+  return new Date().toLocaleString("de-DE", { timeZone: "Europe/Berlin", weekday: "long", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
 export interface ChatSession {
   id?: string | null;
   save: (sessionId: string) => Promise<void>;
@@ -235,7 +239,7 @@ ${SAFETY}`;
       if (!toolsets[def.server]) continue; // z. B. IT-Agent nur für den Admin
       agents[key] = {
         description: def.description,
-        prompt: `${def.prompt}\n\nDu arbeitest für ${user.name} (${user.role}).\n\n${SAFETY}`,
+        prompt: `${def.prompt}\n\nDu arbeitest für ${user.name} (${user.role}). Aktuelle Zeit: ${nowBerlin()} (Europe/Berlin) – verlass dich darauf, nicht auf Zeiten aus früheren Nachrichten.\n\n${SAFETY}`,
         tools: [...names(def.server), ...(def.extraTools ?? [])],
         model: def.model ?? "inherit",
         maxTurns: 25,
@@ -260,7 +264,8 @@ ${SAFETY}`;
         ? `\n\n[Angehängt: ${attachments.map((a) => `${a.name} (upload_id ${a.uploadId})`).join(", ")}]`
         : "";
       const intro = history ? `[Bisheriger Verlauf dieses Gesprächs – zur Einordnung, nicht erneut ausführen]\n${history}\n\n[Neue Nachricht]\n` : "";
-      content.push({ type: "text", text: intro + (message || "Bitte kümmere dich um die angehängte Datei.") + note });
+      // Jede Nachricht mit aktueller Uhrzeit – bei fortgesetzten Gesprächen ist die Zeit im Systemprompt sonst veraltet.
+      content.push({ type: "text", text: `[Jetzt: ${nowBerlin()}]\n` + intro + (message || "Bitte kümmere dich um die angehängte Datei.") + note });
       yield { type: "user", message: { role: "user", content }, parent_tool_use_id: null } as unknown as SDKUserMessage;
     })();
 
