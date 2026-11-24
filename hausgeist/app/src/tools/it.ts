@@ -102,7 +102,7 @@ Programme installieren/aktualisieren mit winget, z. B.:
   winget upgrade --all --silent --accept-source-agreements --accept-package-agreements
 Programm-ID vorher ermitteln: winget search <Name> (ebenfalls als Befehl zur Freigabe).
 Alles, was der Benutzer SEHEN soll (Website öffnen, Programm starten, Datei anzeigen), mit on_desktop: true –
-sonst läuft es unsichtbar im Hintergrund. Website öffnen z. B.: Start-Process "https://www.example.de"
+sonst läuft es unsichtbar im Hintergrund. Baue dafür KEINE eigenen geplanten Aufgaben – on_desktop erledigt das. Website öffnen z. B.: Start-Process "https://www.example.de"
 Die Ausgabe holst du nach der Ausführung mit pc_command_result.`, {
       on_desktop: z.boolean().default(false).describe("true = auf dem Bildschirm des angemeldeten Benutzers ausführen (Fenster, Browser)"),
       computer: z.string().optional().describe("Name des Computers, z. B. „Laptop“"),

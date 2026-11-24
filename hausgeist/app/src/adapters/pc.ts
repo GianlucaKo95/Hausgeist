@@ -44,10 +44,16 @@ if (-not $u) { Write-Error 'Niemand ist am PC angemeldet – ohne angemeldeten B
 $n = 'Hausgeist-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
 $a = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -WindowStyle Hidden -EncodedCommand ${inner}'
 $p = New-ScheduledTaskPrincipal -UserId $u -LogonType Interactive -RunLevel Limited
-Register-ScheduledTask -TaskName $n -Action $a -Principal $p -Force | Out-Null
+# Ohne diese Einstellungen startet Windows Aufgaben auf Laptops im Akkubetrieb gar nicht
+$s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+Register-ScheduledTask -TaskName $n -Action $a -Principal $p -Settings $s -Force | Out-Null
 Start-ScheduledTask -TaskName $n
-Start-Sleep -Seconds 8
+$i = $null
+for ($k = 0; $k -lt 10; $k++) { Start-Sleep -Seconds 1; $i = Get-ScheduledTaskInfo -TaskName $n; if ($i.LastRunTime -and $i.LastRunTime.Year -gt 2000 -and $i.LastTaskResult -ne 267009) { break } }
+$state = (Get-ScheduledTask -TaskName $n).State
 Unregister-ScheduledTask -TaskName $n -Confirm:$false
+if (-not $i.LastRunTime -or $i.LastRunTime.Year -lt 2000) { Write-Error "Windows hat die Aufgabe nicht gestartet (Status: $state)."; exit 1 }
+if ($i.LastTaskResult -notin 0, 267009) { Write-Error ("Gestartet, aber mit Fehler 0x{0:X}." -f $i.LastTaskResult); exit 1 }
 Write-Output "Auf dem Bildschirm von $u gestartet."`;
 }
 
