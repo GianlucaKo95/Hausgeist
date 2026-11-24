@@ -115,7 +115,12 @@ struct CalendarsAdminView: View {
             let names = try await APIClient(auth: auth).testICloud(user: icloudUser, password: icloudPassword)
             // Bekannte Zuordnungen behalten, neue Kalender zunächst als gemeinsam
             calendars = names.map { n in calendars.first { $0.name == n } ?? CalendarOwner(name: n, owner: "shared") }
-            info = "\(names.count) Kalender gefunden – Besitzer festlegen und sichern."
+            // Funktionierende Zugangsdaten sofort speichern – sonst arbeitet der Hausgeist mit den alten weiter.
+            try await APIClient(auth: auth).saveSettings(SettingsPatch(
+                icloud_user: icloudUser, icloud_app_password: icloudPassword.isEmpty ? nil : icloudPassword,
+                calendars: calendars))
+            if !icloudPassword.isEmpty { passwordSet = true; icloudPassword = "" }
+            info = "\(names.count) Kalender gefunden und Zugang gespeichert – jetzt noch Besitzer festlegen und sichern."
         } catch { self.error = error.localizedDescription }
     }
 
