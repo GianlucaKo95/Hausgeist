@@ -15,12 +15,17 @@ struct CalendarFeed: Codable, Hashable, Identifiable {
 }
 
 struct BringListConfig: Codable, Hashable, Identifiable {
-    var id: String { entity_id }
+    var id: String { list_uuid ?? entity_id ?? name }
     var name: String
-    var entity_id: String
+    var list_uuid: String?
+    var entity_id: String?
     var stores: [String]
     var `default`: Bool
 }
+
+struct BringAccountInfo: Codable, Hashable { var email: String; var password_set: Bool }
+struct BringAccountSave: Encodable { var email: String; var password: String? }
+struct BringRemoteList: Decodable, Hashable, Identifiable { var id: String { listUuid }; let listUuid: String; let name: String }
 
 struct HaCalendar: Codable, Hashable, Identifiable {
     var id: String { entity_id }
@@ -64,6 +69,7 @@ struct AdminSettings: Codable {
     var departure_alerts: Bool?
     var departure_buffer_min: Int?
     var travel_mode: String?
+    var bring: BringAccountInfo?
 }
 
 struct FritzInfo: Codable, Hashable { var host: String; var user: String; var password_set: Bool }
@@ -118,6 +124,7 @@ struct SettingsPatch: Encodable {
     var departure_alerts: Bool?
     var departure_buffer_min: Int?
     var travel_mode: String?
+    var bring: BringAccountSave?
 }
 
 struct Mailbox: Codable, Identifiable, Hashable {
@@ -274,6 +281,14 @@ extension APIClient {
         return try await request("api/admin/banks/\(bank)/test", method: "POST", body: b)
     }
 
+    func testBring(email: String, password: String?) async throws -> [BringRemoteList] {
+        if AppConfig.isDemo { return [BringRemoteList(listUuid: "11111111-1111-1111-1111-111111111111", name: "Zuhause"), BringRemoteList(listUuid: "22222222-2222-2222-2222-222222222222", name: "Party")] }
+        struct B: Encodable { let email: String; let password: String? }
+        struct R: Decodable { let lists: [BringRemoteList] }
+        let r: R = try await request("api/admin/bring/test", method: "POST", body: B(email: email, password: password))
+        return r.lists
+    }
+
     func testFritz() async throws -> TestResult {
         if AppConfig.isDemo { return TestResult(ok: true, message: nil, model: "FRITZ!Box 7590 AX", firmware: "8.02", devices: 23) }
         return try await request("api/admin/fritzbox/test", method: "POST", body: [String: String]())
@@ -405,7 +420,7 @@ enum DemoAdmin {
             BankLogin(bank: "deutsche_bank", name: "Deutsche Bank", default_url: "https://fints.deutsche-bank.de/", login: "", url: "", pin_set: false),
             BankLogin(bank: "dkb", name: "DKB", default_url: "https://fints.dkb.de/fints", login: "", url: "", pin_set: false),
         ],
-        bring_lists: [BringListConfig(name: "Zuhause", entity_id: "todo.zuhause", stores: ["Rewe", "Aldi", "dm"], default: true)],
+        bring_lists: [BringListConfig(name: "Zuhause", list_uuid: "11111111-1111-1111-1111-111111111111", entity_id: nil, stores: ["Rewe", "Aldi", "dm"], default: true)],
         fritzbox: FritzInfo(host: "fritz.box", user: "hausgeist", password_set: true),
         pc: PcConfig(name: "Luca-PC", host: "192.168.178.20", port: 22, user: "luca", mac: "AA:BB:CC:DD:EE:FF"),
         pc_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDemoSchluesselNurFuerDieVorschau hausgeist")

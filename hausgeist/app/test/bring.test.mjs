@@ -49,3 +49,20 @@ test("Bring!-Listen lassen sich in der App speichern", () => {
   assert.equal(p.bring_lists[0].default, false);
   assert.throws(() => AppSettings.parse({ bring_lists: [{ name: "X", entity_id: "light.kueche" }] }));
 });
+
+test("Direkt bei Bring!: Hinzufügen und Abhaken ohne Home Assistant", async () => {
+  const calls = [];
+  const fake = {
+    async items() { return [{ uuid: "u-1", name: "Milch", spec: "2 Liter", done: false }]; },
+    async add(list, name, spec) { calls.push(["add", list, name, spec]); },
+    async complete(list, name, uuid) { calls.push(["complete", list, name, uuid]); },
+  };
+  const uuid = "12345678-1234-1234-1234-123456789abc";
+  const s = new ShoppingList({ bring_lists: [{ name: "Zuhause", list_uuid: uuid, stores: [], default: true }] }, {}, fake);
+  const r = await s.add([{ item: "Milch" }, { item: "Äpfel", quantity: "1 kg" }]);
+  assert.deepEqual(r, { bring: 1, own: 0 });
+  assert.deepEqual(calls[0], ["add", uuid, "Äpfel", "1 kg"]);
+  const items = await s.list("Zuhause");
+  await s.checkOff([items[0].id]);
+  assert.deepEqual(calls.at(-1), ["complete", uuid, "Milch", "u-1"]);
+});

@@ -45,9 +45,13 @@ const PcCfg = z.object({
   mac: z.string().default(""),
 });
 
+const BringAccount = z.object({ email: z.string().default(""), password: z.string().default("") });
 const BringList = z.object({
   name: z.string().min(1),
-  entity_id: z.string().regex(/^todo\.[a-z0-9_]+$/, "entity_id muss mit todo. beginnen"),
+  /** Direkt bei Bring! (bevorzugt) … */
+  list_uuid: z.string().optional(),
+  /** … oder über die Home-Assistant-Integration */
+  entity_id: z.string().regex(/^todo\.[a-z0-9_]+$/, "entity_id muss mit todo. beginnen").optional(),
   stores: z.array(z.string()).default([]),
   default: z.boolean().default(false),
 });
@@ -83,6 +87,7 @@ export const Options = z.object({
   evening_check: z.string().regex(/^(([01]\d|2[0-3]):[0-5]\d)?$/, "evening_check im Format HH:MM").default("18:00"),
   ha_entities: z.array(z.string()).default([]),
   bring_lists: z.array(BringList).default([]),
+  bring: BringAccount.prefault({}),
   fritzbox: FritzBoxCfg.prefault({}),
   pc: PcCfg.prefault({}),
   energy: Energy.default({}),
@@ -124,6 +129,7 @@ export const AppSettings = z.object({
   ha_calendars: z.array(HaCalendar),
   ha_entities: z.array(z.string()),
   bring_lists: z.array(BringList),
+  bring: BringAccount,
   fritzbox: FritzBoxCfg,
   pc: PcCfg,
   energy: Energy,

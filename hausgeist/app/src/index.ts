@@ -1,6 +1,7 @@
 import { FritzBox } from "./adapters/fritzbox.js";
 import { WindowsPc } from "./adapters/pc.js";
 import { Positions } from "./core/location.js";
+import { BringClient } from "./adapters/bring.js";
 import { ShoppingList } from "./core/shopping-list.js";
 import { loadConfig } from "./core/config.js";
 import { db, enableAppPush } from "./core/db.js";
@@ -73,7 +74,8 @@ async function main() {
   const communication = new CommunicationAgent(config, (mail) => intake.handleMail(mail));
 
   // Master-Agent mit acht Fachagenten (auf Anfrage) und Routinen (zeitgesteuert)
-  const shopping = new ShoppingList(config, ha);
+  const bring = new BringClient(config);
+  const shopping = new ShoppingList(config, ha, bring);
   const positions = new Positions(config.dataDir);
   const base = { config, ha, calendar, paperless, actions, finance, intake, shopping, fritz, pc, positions };
   const master = new MasterAgent(config, base);
@@ -92,8 +94,9 @@ async function main() {
     if (changed.includes("mailboxes")) await communication.restart();
     if (changed.includes("icloud_user") || changed.includes("icloud_app_password")) apple.reset();
     if (changed.includes("fritzbox")) fritz.reset();
+    if (changed.includes("bring")) bring.reset();
   });
-  startServer(config, master, finance, actions, ha, settings, fints, { fritz, pc, positions });
+  startServer(config, master, finance, actions, ha, settings, fints, { fritz, pc, positions, bring });
   routines.start();
 
   log.info(`Hausgeist läuft (Zahlungsmodus: ${payments.name})`);

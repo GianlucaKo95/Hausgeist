@@ -15,6 +15,7 @@ import { Conversations } from "./conversations.js";
 import type { FinTSProvider } from "../adapters/payment.js";
 import type { FritzBox } from "../adapters/fritzbox.js";
 import type { WindowsPc } from "../adapters/pc.js";
+import type { BringClient } from "../adapters/bring.js";
 import { places, zoneAt, type Positions } from "./location.js";
 import { logger } from "./log.js";
 import { CHAT_PAGE } from "./chat-page.js";
@@ -77,7 +78,7 @@ async function userFromSupabaseToken(token: string): Promise<AppUser | null> {
  * - App: Authorization: Bearer <Supabase-Access-Token>
  * - Ingress: Home Assistant setzt X-Remote-User-Id.
  */
-export function startServer(config: Config, master: MasterAgent, finance: FinanceAgent, actions: ActionService, ha: HomeAssistant, settings: SettingsStore, fints: FinTSProvider, it: { fritz: FritzBox; pc: WindowsPc; positions: Positions }): void {
+export function startServer(config: Config, master: MasterAgent, finance: FinanceAgent, actions: ActionService, ha: HomeAssistant, settings: SettingsStore, fints: FinTSProvider, it: { fritz: FritzBox; pc: WindowsPc; positions: Positions; bring: BringClient }): void {
   const resolveUser = async (req: IncomingMessage): Promise<AppUser | null> => {
     const auth = req.headers.authorization ?? "";
     if (auth.startsWith("Bearer ")) return userFromSupabaseToken(auth.slice(7));
@@ -105,7 +106,7 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
         res.end(CHAT_PAGE);
         return;
       }
-      if (path.endsWith("/api/health")) return json(res, 200, { ok: true, version: "0.13.0" });
+      if (path.endsWith("/api/health")) return json(res, 200, { ok: true, version: "0.14.0" });
 
       const user = await resolveUser(req);
       if (!user) return json(res, 401, { error: "Nicht angemeldet oder nicht als Haushaltsmitglied eingetragen." });
@@ -290,7 +291,7 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
         return json(res, r.ok ? 200 : 409, r);
       }
 
-      if (await handleAdmin(req, res, path, user, { config, settings, ha, fints, fritz: it.fritz, pc: it.pc, json, readBody: (r) => readBody(r) })) return;
+      if (await handleAdmin(req, res, path, user, { config, settings, ha, fints, fritz: it.fritz, pc: it.pc, bring: it.bring, json, readBody: (r) => readBody(r) })) return;
 
       json(res, 404, { error: "Nicht gefunden" });
     } catch (e) {

@@ -1,6 +1,7 @@
 import { db } from "./db.js";
 import type { Config } from "./config.js";
 import type { HomeAssistant } from "../adapters/homeassistant.js";
+import type { BringClient } from "../adapters/bring.js";
 import { logger } from "./log.js";
 
 const log = logger("einkauf");
@@ -37,12 +38,13 @@ export function bringListFor(lists: BringList[], store?: string | null): BringLi
   return lists.find((l) => l.default) ?? lists[0];
 }
 
-/** Bring!-Einträge tragen eine Kennung, die Liste und Eintrag enthält. */
-export const bringId = (entity: string, uid: string) => `bring:${entity}:${uid}`;
+/** Bring!-Einträge tragen eine Kennung, die Liste und Eintrag enthält (Liste = todo.… oder Bring!-Listen-UUID). */
+export const bringId = (list: string, uid: string) => `bring:${list}:${uid}`;
 export function parseBringId(id: string): { entity: string; uid: string } | undefined {
-  const m = id.match(/^bring:(todo\.[a-z0-9_]+):(.+)$/);
+  const m = id.match(/^bring:(todo\.[a-z0-9_]+|[0-9a-f-]{36}):(.+)$/);
   return m ? { entity: m[1], uid: m[2] } : undefined;
 }
+const listKey = (l: BringList) => l.list_uuid ?? l.entity_id ?? "";
 
 /**
  * Einkaufsliste: Lebensmittel & Co. landen über die Home-Assistant-Integration
@@ -50,20 +52,28 @@ export function parseBringId(id: string): { entity: string; uid: string } | unde
  * Bring! bleibt dabei die Quelle – was in der Bring!-App abgehakt wird, ist erledigt.
  */
 export class ShoppingList {
-  constructor(private readonly config: Config, private readonly ha: HomeAssistant) {}
+  constructor(private readonly config: Config, private readonly ha: HomeAssistant, private readonly bring?: BringClient) {}
 
   private get lists(): BringList[] {
     return this.config.bring_lists ?? [];
   }
 
   private async bringItems(list: BringList, includeDone: boolean): Promise<ListItem[]> {
+    if (list.list_uuid && this.bring) {
+      // Direkt bei Bring!: uid = Bring-UUID + Artikelname (zum Abhaken nötig)
+      return (await this.bring.items(list.list_uuid, includeDone)).map((i) => ({
+        id: bringId(list.list_uuid!, `${i.uuid}|${encodeURIComponent(i.name)}`),
+        item: i.name, quantity: i.spec || null, store: list.name, done: i.done, source: "bring" as const,
+      }));
+    }
+    if (!list.entity_id) return [];
     const status = includeDone ? ["needs_action", "completed"] : ["needs_action"];
     const res = await this.ha.callServiceWithResponse<Record<string, { items: TodoItem[] }>>("todo", "get_items", {
       entity_id: list.entity_id,
       status,
     });
     return (res[list.entity_id]?.items ?? []).map((t) => ({
-      id: bringId(list.entity_id, t.uid),
+      id: bringId(list.entity_id!, t.uid),
       item: t.summary,
       quantity: t.description || null,
       store: list.name,
@@ -106,11 +116,15 @@ export class ShoppingList {
       if (!list) { own.push(i); continue; }
       const open = await this.bringItems(list, false).catch(() => []);
       if (open.some((o) => norm(o.item) === norm(i.item))) continue; // steht schon drauf
-      await this.ha.callService("todo", "add_item", {
-        entity_id: list.entity_id,
-        item: i.item,
-        ...(i.quantity ? { description: i.quantity } : {}),
-      });
+      if (list.list_uuid && this.bring) {
+        await this.bring.add(list.list_uuid, i.item, i.quantity ?? "");
+      } else {
+        await this.ha.callService("todo", "add_item", {
+          entity_id: list.entity_id,
+          item: i.item,
+          ...(i.quantity ? { description: i.quantity } : {}),
+        });
+      }
       bring++;
     }
     if (own.length) {
@@ -125,8 +139,14 @@ export class ShoppingList {
     for (const id of ids) {
       const b = parseBringId(id);
       if (!b) { own.push(id); continue; }
-      if (!this.lists.some((l) => l.entity_id === b.entity)) throw new Error(`${b.entity} ist keine eingerichtete Bring!-Liste.`);
-      await this.ha.callService("todo", "update_item", { entity_id: b.entity, item: b.uid, status: "completed" });
+      const list = this.lists.find((l) => listKey(l) === b.entity);
+      if (!list) throw new Error(`${b.entity} ist keine eingerichtete Bring!-Liste.`);
+      if (list.list_uuid && this.bring) {
+        const [uuid, name] = b.uid.split("|");
+        await this.bring.complete(list.list_uuid, decodeURIComponent(name ?? ""), uuid);
+      } else {
+        await this.ha.callService("todo", "update_item", { entity_id: b.entity, item: b.uid, status: "completed" });
+      }
     }
     if (own.length) {
       const { error } = await db().from("shopping_lists").update({ done: true }).in("id", own);

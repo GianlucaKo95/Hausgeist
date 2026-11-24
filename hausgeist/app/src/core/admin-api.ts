@@ -6,6 +6,7 @@ import nodemailer from "nodemailer";
 import { z } from "zod";
 import { BANKS, type BankKey, type Config, type MailboxConfig } from "./config.js";
 import type { FritzBox } from "../adapters/fritzbox.js";
+import type { BringClient } from "../adapters/bring.js";
 import type { WindowsPc } from "../adapters/pc.js";
 import { BANK_INFO, blzFromIban, type FinTSProvider } from "../adapters/payment.js";
 import type { SettingsStore } from "./settings.js";
@@ -24,6 +25,7 @@ export interface AdminDeps {
   fints: FinTSProvider;
   fritz: FritzBox;
   pc: WindowsPc;
+  bring: BringClient;
   json: Json;
   readBody: ReadBody;
 }
@@ -59,9 +61,11 @@ const SettingsBody = z.object({
   calendar_feeds: z.array(z.object({ name: z.string().min(1), url: z.string().regex(/^(https?|webcal):\/\//, "Link muss mit https:// oder webcal:// beginnen"), owner: z.string().default("shared") })).optional(),
   ha_calendars: z.array(z.object({ name: z.string().min(1), entity_id: z.string().regex(/^calendar\.[a-z0-9_]+$/), owner: z.string().default("shared") })).optional(),
   ha_entities: z.array(z.string().min(1)).optional(),
+  bring: z.object({ email: z.string().trim().max(120), password: z.string().max(120).optional() }).optional(),
   bring_lists: z.array(z.object({
     name: z.string().min(1).max(40),
-    entity_id: z.string().regex(/^todo\.[a-z0-9_]+$/, "Bitte eine To-do-Liste (todo.…) wählen"),
+    list_uuid: z.string().max(80).optional(),
+    entity_id: z.string().regex(/^todo\.[a-z0-9_]+$/, "Bitte eine To-do-Liste (todo.…) wählen").optional(),
     stores: z.array(z.string().min(1)).default([]),
     default: z.boolean().default(false),
   })).optional(),
@@ -172,6 +176,7 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
         icloud_user: config.icloud_user, icloud_password_set: Boolean(config.icloud_app_password),
         calendars: config.calendars, calendar_feeds: config.calendar_feeds, ha_calendars: config.ha_calendars,
         ha_entities: config.ha_entities, energy: config.energy, bring_lists: config.bring_lists,
+        bring: { email: config.bring.email, password_set: Boolean(config.bring.password) },
         daily_brief: config.daily_brief, evening_check: config.evening_check, mail_triage: config.mail_triage,
         weekly_offers: config.weekly_offers, calendar_insights: config.calendar_insights,
         departure_alerts: config.departure_alerts, departure_buffer_min: config.departure_buffer_min, travel_mode: config.travel_mode,
@@ -194,6 +199,7 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
       // Leere Passwortfelder bedeuten „unverändert lassen“.
       if (body.icloud_app_password === "") delete body.icloud_app_password;
       if (body.paperless_token === "") delete body.paperless_token;
+      const bring = body.bring ? { email: body.bring.email, password: body.bring.password || config.bring.password } : undefined;
       const fritzbox = body.fritzbox ? { ...body.fritzbox, password: body.fritzbox.password || config.fritzbox.password } : undefined;
       if (body.pc?.mac) body.pc.mac = body.pc.mac.replace(/-/g, ":").toUpperCase();
       if (body.payment_mode === "fints") {
@@ -201,8 +207,8 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
         if (!productId.trim()) throw new HttpError(400, "Für echte Überweisungen zuerst die FinTS-Produkt-ID eintragen.");
         if (!BANKS.some((b) => config.bank_logins[b])) throw new HttpError(400, "Für echte Überweisungen zuerst einen Bankzugang hinterlegen.");
       }
-      const { fritzbox: _f, ...rest } = body;
-      await d.settings.update(fritzbox ? { ...rest, fritzbox } : rest);
+      const { fritzbox: _f, bring: _b, ...rest } = body;
+      await d.settings.update({ ...rest, ...(fritzbox ? { fritzbox } : {}), ...(bring ? { bring } : {}) });
       await audit({ agent: "admin", action: "settings", level: 1, result: Object.keys(body).join(","), user_id: user.id });
       json(res, 200, { ok: true });
       return true;
@@ -451,6 +457,19 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
         throw new HttpError(400, e instanceof Error ? e.message : String(e));
       } finally {
         config.fints_product_id = productBefore;
+      }
+      return true;
+    }
+
+    // ── Bring! direkt ────────────────────────────────────────────────
+    if (route === "bring/test" && method === "POST") {
+      requireAdmin(user);
+      const b = z.object({ email: z.string().optional(), password: z.string().optional() }).parse(await d.readBody(req));
+      try {
+        const session = await d.bring.login(b.email || config.bring.email, b.password || config.bring.password);
+        json(res, 200, { ok: true, lists: await d.bring.lists(session) });
+      } catch (e) {
+        throw new HttpError(400, e instanceof Error ? e.message : String(e));
       }
       return true;
     }
