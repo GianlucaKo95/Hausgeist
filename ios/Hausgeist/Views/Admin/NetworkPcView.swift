@@ -9,7 +9,11 @@ struct NetworkPcView: View {
     @State private var fritzPassword = ""
     @State private var fritzPasswordSet = false
 
-    @State private var pc = PcConfig(name: "PC", host: "", port: 22, user: "", mac: "")
+    @State private var pcs: [PcConfig] = []
+    @State private var found: [DiscoveredPc] = []
+    @State private var searching = false
+    @State private var editing: PcConfig?
+    @State private var editingIndex: Int?
     @State private var publicKey = ""
 
     @State private var supported = true
@@ -23,7 +27,7 @@ struct NetworkPcView: View {
         Form {
             ErrorBanner(text: error)
             if !supported {
-                Text("Bitte das Add-on auf Version 0.12.0 aktualisieren.").foregroundStyle(.secondary)
+                Text("Bitte das Add-on auf Version 0.17.0 aktualisieren.").foregroundStyle(.secondary)
             } else {
                 fritzSection
                 pcSection
@@ -53,22 +57,84 @@ struct NetworkPcView: View {
     }
 
     private var pcSection: some View {
-        Section {
-            TextField("Name, z. B. Luca-PC", text: $pc.name)
-            TextField("Adresse (IP oder Name im Heimnetz)", text: $pc.host).textInputAutocapitalization(.never).autocorrectionDisabled()
-            TextField("Windows-Benutzer", text: $pc.user).textInputAutocapitalization(.never).autocorrectionDisabled()
-            TextField("MAC-Adresse (zum Einschalten)", text: $pc.mac).textInputAutocapitalization(.characters).autocorrectionDisabled()
-            Stepper("SSH-Port \(pc.port)", value: $pc.port, in: 1...65535)
-            Button {
-                Task { await testPc() }
-            } label: { HStack { Text("Sichern und testen"); if busy { Spacer(); ProgressView() } } }
-            .disabled(busy || pc.host.isEmpty || pc.user.isEmpty)
-            if let pcResult { Text(pcResult).font(.footnote.monospaced()) }
-        } header: {
-            Text("Windows-PC")
-        } footer: {
-            Text("Jeder Befehl am PC wird dir vorher unter „Freigaben“ angezeigt und läuft erst nach deinem Klick. IP- und MAC-Adresse findest du in der FRITZ!Box unter Heimnetz → Netzwerk beim PC.")
+        Group {
+            Section {
+                ForEach(Array(pcs.enumerated()), id: \.element.id) { i, p in
+                    Button { editingIndex = i; editing = p } label: {
+                        HStack {
+                            Image(systemName: p.name.lowercased().contains("laptop") ? "laptopcomputer" : "desktopcomputer")
+                            VStack(alignment: .leading) {
+                                Text(p.name).foregroundStyle(.primary)
+                                Text("\(p.host) · \(p.user)").font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .swipeActions { Button("Entfernen", role: .destructive) { pcs.remove(at: i); Task { await save() } } }
+                }
+                Button {
+                    Task { await discover() }
+                } label: {
+                    HStack { Label("Im Heimnetz suchen", systemImage: "magnifyingglass"); if searching { Spacer(); ProgressView() } }
+                }
+                .disabled(searching || fritzUser.isEmpty)
+                Button("Computer von Hand hinzufügen", systemImage: "plus") {
+                    editingIndex = nil
+                    editing = PcConfig(name: pcs.isEmpty ? "PC" : "Laptop", host: "", port: 22, user: pcs.first?.user ?? "", mac: "")
+                }
+                if let pcResult { Text(pcResult).font(.footnote.monospaced()) }
+            } header: {
+                Text("Computer")
+            } footer: {
+                Text("Jeder Befehl am Computer wird dir vorher unter „Freigaben“ angezeigt und läuft erst nach deinem Klick. Im Chat sprichst du sie mit Namen an, z. B. „Installiere VLC auf dem Laptop“.")
+            }
+
+            if !found.isEmpty {
+                Section {
+                    ForEach(found) { c in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(c.name)
+                                Text("\(c.ip) · \(c.active ? "an" : "aus")\(c.windows == true ? " · Windows" : "")").font(.caption).foregroundStyle(.secondary)
+                                Text(status(c)).font(.caption).foregroundStyle(c.ssh || c.configuredAs != nil ? .green : .orange)
+                            }
+                            Spacer()
+                            if c.configuredAs == nil {
+                                Button("Hinzufügen") {
+                                    editingIndex = nil
+                                    editing = PcConfig(name: suggestedName(c), host: c.ip, port: 22, user: pcs.first?.user ?? "", mac: c.mac)
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Gefunden")
+                } footer: {
+                    Text("„Noch nicht bereit“: am Computer einmal den Einrichtungsbefehl (unten) ausführen, dann erneut suchen. Ausgeschaltete Computer zeigt die FRITZ!Box auch an.")
+                }
+            }
         }
+        .sheet(item: $editing) { p in
+            PcEditSheet(pc: p) { saved in
+                if let i = editingIndex, pcs.indices.contains(i) { pcs[i] = saved } else { pcs.append(saved) }
+                Task { await save(); await testPc(saved.name) }
+            }
+        }
+    }
+
+    private func status(_ c: DiscoveredPc) -> String {
+        if let n = c.configuredAs { return "eingerichtet als „\(n)“" }
+        if !c.active { return "aus – zum Prüfen einschalten" }
+        return c.ssh ? "bereit zum Hinzufügen" : "noch nicht bereit (Einrichtungsbefehl fehlt)"
+    }
+
+    private func suggestedName(_ c: DiscoveredPc) -> String {
+        let n = c.name.lowercased()
+        if n.contains("laptop") || n.contains("book") || n.contains("notebook") || c.connection.contains("802.11") { return pcs.contains { $0.name == "Laptop" } ? c.name : "Laptop" }
+        return pcs.contains { $0.name == "PC" } ? c.name : "PC"
     }
 
     private var setupSection: some View {
@@ -106,9 +172,9 @@ struct NetworkPcView: View {
     private func load() async {
         do {
             let s = try await APIClient(auth: auth).adminSettings()
-            supported = s.pc != nil
+            supported = s.pcs != nil
             if let f = s.fritzbox { fritzHost = f.host; fritzUser = f.user; fritzPasswordSet = f.password_set }
-            if let p = s.pc { pc = p }
+            pcs = s.pcs ?? ((s.pc?.host.isEmpty == false) ? [s.pc!] : [])
             publicKey = s.pc_public_key ?? ""
             error = nil
         } catch { self.error = error.localizedDescription }
@@ -120,7 +186,7 @@ struct NetworkPcView: View {
             try await APIClient(auth: auth).saveSettings(SettingsPatch(
                 fritzbox: FritzSave(host: fritzHost.isEmpty ? "fritz.box" : fritzHost, user: fritzUser,
                                     password: fritzPassword.isEmpty ? nil : fritzPassword),
-                pc: pc))
+                pcs: pcs))
             if !fritzPassword.isEmpty { fritzPasswordSet = true; fritzPassword = "" }
             error = nil
         } catch { self.error = error.localizedDescription }
@@ -136,14 +202,19 @@ struct NetworkPcView: View {
         } catch { fritzResult = "❌ \(error.localizedDescription)" }
     }
 
-    private func testPc() async {
-        await save()
-        guard error == nil else { return }
+    private func testPc(_ name: String) async {
         busy = true; defer { busy = false }
         do {
-            let r = try await APIClient(auth: auth).testPc()
-            pcResult = (r.ok ? "✅ " : "❌ ") + (r.message ?? "")
-        } catch { pcResult = "❌ \(error.localizedDescription)" }
+            let r = try await APIClient(auth: auth).testPc(name: name)
+            pcResult = "\(name): " + (r.ok ? "✅ " : "❌ ") + (r.message ?? "")
+        } catch { pcResult = "\(name): ❌ \(error.localizedDescription)" }
+    }
+
+    private func discover() async {
+        await save()
+        searching = true; defer { searching = false }
+        do { found = try await APIClient(auth: auth).discoverPcs(); error = nil }
+        catch { self.error = error.localizedDescription }
     }
 
     private func forget() async {
@@ -151,5 +222,34 @@ struct NetworkPcView: View {
             try await APIClient(auth: auth).forgetPcHost()
             pcResult = "Der PC wird beim nächsten Kontakt neu kennengelernt."
         } catch { self.error = error.localizedDescription }
+    }
+}
+
+
+/// Computer bearbeiten (Name, Adresse, Windows-Benutzer, MAC).
+struct PcEditSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State var pc: PcConfig
+    var onSave: (PcConfig) -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("Name, z. B. PC oder Laptop", text: $pc.name)
+                TextField("Adresse (IP oder Name im Heimnetz)", text: $pc.host).textInputAutocapitalization(.never).autocorrectionDisabled()
+                TextField("Windows-Benutzer", text: $pc.user).textInputAutocapitalization(.never).autocorrectionDisabled()
+                TextField("MAC-Adresse (zum Einschalten)", text: $pc.mac).textInputAutocapitalization(.characters).autocorrectionDisabled()
+                Stepper("SSH-Port \(pc.port)", value: $pc.port, in: 1...65535)
+            }
+            .navigationTitle(pc.name.isEmpty ? "Computer" : pc.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Sichern") { onSave(pc); dismiss() }
+                        .disabled(pc.name.isEmpty || pc.host.isEmpty || pc.user.isEmpty)
+                }
+            }
+        }
     }
 }

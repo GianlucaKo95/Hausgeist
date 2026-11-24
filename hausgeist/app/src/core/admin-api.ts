@@ -4,11 +4,11 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { ImapFlow } from "imapflow";
 import nodemailer from "nodemailer";
 import { z } from "zod";
-import { BANKS, type BankKey, type Config, type MailboxConfig } from "./config.js";
+import { allPcs, BANKS, type BankKey, type Config, type MailboxConfig } from "./config.js";
 import type { FritzBox } from "../adapters/fritzbox.js";
 import type { BringClient } from "../adapters/bring.js";
 import { detectFromHa } from "./energy-detect.js";
-import type { WindowsPc } from "../adapters/pc.js";
+import { discoverComputers, type WindowsPc } from "../adapters/pc.js";
 import { BANK_INFO, blzFromIban, type FinTSProvider } from "../adapters/payment.js";
 import type { SettingsStore } from "./settings.js";
 import { isValidIban, normalizeIban, type AppUser } from "./checks.js";
@@ -50,6 +50,13 @@ const SettingsBody = z.object({
     user: z.string().trim().max(60).default(""),
     password: z.string().max(100).optional(),
   }).optional(),
+  pcs: z.array(z.object({
+    name: z.string().trim().min(1).max(40),
+    host: z.string().trim().min(1).max(100),
+    port: z.number().int().min(1).max(65535).default(22),
+    user: z.string().trim().min(1).max(60),
+    mac: z.string().trim().regex(/^$|^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$/, "MAC-Adresse im Format AA:BB:CC:DD:EE:FF").default(""),
+  })).max(10).optional(),
   pc: z.object({
     name: z.string().trim().min(1).max(40).default("PC"),
     host: z.string().trim().max(100).default(""),
@@ -186,7 +193,7 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
         push_enabled: Boolean(config.apns_key_id && config.apns_key),
         payment_mode: config.payment_mode, fints_product_id: config.fints_product_id,
         fritzbox: { host: config.fritzbox.host, user: config.fritzbox.user, password_set: Boolean(config.fritzbox.password) },
-        pc: config.pc, pc_public_key: d.pc.keyPair().publicKey,
+        pc: config.pc, pcs: allPcs(config), pc_public_key: d.pc.keyPair().publicKey,
         banks: BANKS.map((b) => ({
           bank: b, name: BANK_INFO[b].name, default_url: BANK_INFO[b].url,
           login: config.bank_logins[b]?.login ?? "", url: config.bank_logins[b]?.url ?? "",
@@ -204,6 +211,7 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
       const bring = body.bring ? { email: body.bring.email, password: body.bring.password || config.bring.password } : undefined;
       const fritzbox = body.fritzbox ? { ...body.fritzbox, password: body.fritzbox.password || config.fritzbox.password } : undefined;
       if (body.pc?.mac) body.pc.mac = body.pc.mac.replace(/-/g, ":").toUpperCase();
+      if (body.pcs) body.pcs = body.pcs.map((p) => ({ ...p, mac: p.mac.replace(/-/g, ":").toUpperCase() }));
       if (body.payment_mode === "fints") {
         const productId = body.fints_product_id ?? config.fints_product_id;
         if (!productId.trim()) throw new HttpError(400, "Für echte Überweisungen zuerst die FinTS-Produkt-ID eintragen.");
@@ -497,23 +505,35 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
     }
     if (route === "pc/test" && method === "POST") {
       requireAdmin(user);
-      if (!d.pc.enabled) throw new HttpError(400, "Bitte zuerst Adresse und Benutzer des PCs eintragen.");
-      if (!(await d.pc.online())) {
-        json(res, 200, { ok: false, online: false, message: `${config.pc.name} ist aus oder SSH ist nicht erreichbar (Port ${config.pc.port}).` });
+      const b = z.object({ name: z.string().optional() }).parse(await d.readBody(req));
+      let pc;
+      try { pc = d.pc.find(b.name); } catch (e) { throw new HttpError(400, e instanceof Error ? e.message : String(e)); }
+      if (!(await d.pc.online(pc))) {
+        json(res, 200, { ok: false, online: false, message: `${pc.name} ist aus oder SSH ist nicht erreichbar (Port ${pc.port}).` });
         return true;
       }
       try {
         // Fester, harmloser Befehl für den Verbindungstest
-        const r = await d.pc.run("whoami; hostname; (Get-CimInstance Win32_OperatingSystem).Caption", 30_000);
+        const r = await d.pc.run("whoami; hostname; (Get-CimInstance Win32_OperatingSystem).Caption", 30_000, pc);
         json(res, 200, { ok: true, online: true, message: r.stdout || r.stderr });
       } catch (e) {
         json(res, 200, { ok: false, online: true, message: e instanceof Error ? e.message : String(e) });
       }
       return true;
     }
+    if (route === "pc/discover" && method === "POST") {
+      requireAdmin(user);
+      try {
+        json(res, 200, { computers: await discoverComputers(await d.fritz.hosts(false), d.pc.list()) });
+      } catch (e) {
+        throw new HttpError(400, e instanceof Error ? e.message : String(e));
+      }
+      return true;
+    }
     if (route === "pc/forget-host" && method === "POST") {
       requireAdmin(user);
-      d.pc.forgetHost();
+      const fb = z.object({ host: z.string().optional() }).parse(await d.readBody(req));
+      d.pc.forgetHost(fb.host);
       await audit({ agent: "admin", action: "pc_forget_host", level: 1, result: "ok", user_id: user.id });
       json(res, 200, { ok: true });
       return true;

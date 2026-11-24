@@ -45,6 +45,14 @@ const PcCfg = z.object({
   mac: z.string().default(""),
 });
 
+export type PcConfig = z.infer<typeof PcCfg>;
+
+/** Alle eingerichteten Computer (ältere Einzel-Einstellung „pc“ eingeschlossen). */
+export function allPcs(c: { pc: PcConfig; pcs: PcConfig[] }): PcConfig[] {
+  if (c.pcs.length) return c.pcs.filter((p) => p.host && p.user);
+  return c.pc.host && c.pc.user ? [c.pc] : [];
+}
+
 const BringAccount = z.object({ email: z.string().default(""), password: z.string().default("") });
 const BringList = z.object({
   name: z.string().min(1),
@@ -92,6 +100,8 @@ export const Options = z.object({
   bring: BringAccount.prefault({}),
   fritzbox: FritzBoxCfg.prefault({}),
   pc: PcCfg.prefault({}),
+  /** Mehrere Computer (z. B. „PC“ und „Laptop“); pc bleibt für ältere Einstellungen erhalten */
+  pcs: z.array(PcCfg).default([]),
   energy: Energy.default({}),
   github_token: z.string().default(""),
   serpapi_key: z.string().default(""),
@@ -136,6 +146,7 @@ export const AppSettings = z.object({
   bring: BringAccount,
   fritzbox: FritzBoxCfg,
   pc: PcCfg,
+  pcs: z.array(PcCfg),
   energy: Energy,
   daily_brief: time,
   evening_check: time,

@@ -5,7 +5,23 @@ import { join } from "node:path";
 import ssh2 from "ssh2";
 
 const { Client, utils } = ssh2;
-import type { Config } from "../core/config.js";
+import { allPcs, type Config, type PcConfig } from "../core/config.js";
+
+/** Ist ein TCP-Port erreichbar? (z. B. 22 = SSH, 445/3389 = Windows) */
+export function portOpen(host: string, port: number, timeoutMs = 1500): Promise<boolean> {
+  return new Promise((resolve) => {
+    const s = createConnection({ host, port });
+    const done = (v: boolean) => { s.destroy(); resolve(v); };
+    s.setTimeout(timeoutMs, () => done(false));
+    s.once("connect", () => done(true));
+    s.once("error", () => done(false));
+  });
+}
+
+/** Sieht ein Gerätename nach Computer aus? (FRITZ!Box-Geräteliste) */
+export function looksLikeComputer(name: string): boolean {
+  return /(desktop|laptop|notebook|book|pc\b|-pc|surface|thinkpad|elitebook|probook|latitude|inspiron|xps|zenbook|vivobook|ideapad|yoga|legion|omen|pavilion|aspire|predator|rog|tuf|macbook|imac|mac-?mini|mac-?studio|win(dows)?-|workstation|rechner|computer)/i.test(name);
+}
 
 export interface CommandResult { code: number | null; stdout: string; stderr: string }
 
@@ -32,7 +48,25 @@ export class WindowsPc {
   }
 
   get enabled(): boolean {
-    return Boolean(this.config.pc.host && this.config.pc.user);
+    return allPcs(this.config).length > 0;
+  }
+
+  list(): PcConfig[] {
+    return allPcs(this.config);
+  }
+
+  /** Computer nach Name (ohne Groß-/Kleinschreibung); ohne Angabe der einzige bzw. erste. */
+  find(name?: string): PcConfig {
+    const pcs = this.list();
+    if (!pcs.length) throw new Error("Noch kein Computer eingerichtet (App → Verwaltung → Netzwerk & PC).");
+    if (!name) {
+      if (pcs.length > 1) throw new Error(`Welcher Computer? Eingerichtet: ${pcs.map((p) => p.name).join(", ")}`);
+      return pcs[0];
+    }
+    const n = name.trim().toLowerCase();
+    const hit = pcs.find((p) => p.name.toLowerCase() === n) ?? pcs.find((p) => p.name.toLowerCase().includes(n) || n.includes(p.name.toLowerCase()));
+    if (!hit) throw new Error(`Einen Computer „${name}“ kenne ich nicht. Eingerichtet: ${pcs.map((p) => p.name).join(", ")}`);
+    return hit;
   }
 
   /** Eigener SSH-Schlüssel (wird beim ersten Aufruf erzeugt). */
@@ -53,26 +87,23 @@ export class WindowsPc {
   }
 
   /** Gemerkten Fingerabdruck vergessen (z. B. nach Neuinstallation von Windows). */
-  forgetHost(): void {
-    try { writeFileSync(this.knownHostsPath(), "{}"); } catch { /* egal */ }
+  forgetHost(host?: string): void {
+    try {
+      if (!host) { writeFileSync(this.knownHostsPath(), "{}"); return; }
+      const known = JSON.parse(readFileSync(this.knownHostsPath(), "utf8"));
+      delete known[host];
+      writeFileSync(this.knownHostsPath(), JSON.stringify(known), { mode: 0o600 });
+    } catch { /* noch nichts gemerkt */ }
   }
 
   /** Ist der PC an und SSH erreichbar? (ohne Anmeldung) */
-  online(timeoutMs = 3000): Promise<boolean> {
-    if (!this.enabled) return Promise.resolve(false);
-    return new Promise((resolve) => {
-      const s = createConnection({ host: this.config.pc.host, port: this.config.pc.port || 22 });
-      const done = (v: boolean) => { s.destroy(); resolve(v); };
-      s.setTimeout(timeoutMs, () => done(false));
-      s.once("connect", () => done(true));
-      s.once("error", () => done(false));
-    });
+  online(pc: PcConfig = this.find(), timeoutMs = 3000): Promise<boolean> {
+    return portOpen(pc.host, pc.port || 22, timeoutMs);
   }
 
-  async run(script: string, timeoutMs = 10 * 60_000): Promise<CommandResult> {
-    if (!this.enabled) throw new Error("Der PC ist nicht eingerichtet – in der App unter Verwaltung → Netzwerk & PC eintragen.");
+  async run(script: string, timeoutMs = 10 * 60_000, pc: PcConfig = this.find()): Promise<CommandResult> {
     const { privateKey } = this.keyPair();
-    const host = this.config.pc.host;
+    const host = pc.host;
     let known: Record<string, string> = {};
     try { known = JSON.parse(readFileSync(this.knownHostsPath(), "utf8")); } catch { /* erster Kontakt */ }
     let hostMismatch = false;
@@ -104,8 +135,8 @@ export class WindowsPc {
       });
       conn.connect({
         host,
-        port: this.config.pc.port || 22,
-        username: this.config.pc.user,
+        port: pc.port || 22,
+        username: pc.user,
         privateKey,
         readyTimeout: 15_000,
         hostVerifier: (key: Buffer) => {
@@ -121,4 +152,23 @@ export class WindowsPc {
       });
     });
   }
+}
+
+export interface DiscoveredComputer {
+  name: string; ip: string; mac: string; active: boolean; connection: string;
+  windows: boolean | null; ssh: boolean; configuredAs: string | null;
+}
+
+/** Computer aus der FRITZ!Box-Geräteliste, mit Prüfung ob SSH schon bereit ist. */
+export async function discoverComputers(
+  hosts: { name: string; ip: string; mac: string; active: boolean; connection: string }[],
+  known: PcConfig[],
+): Promise<DiscoveredComputer[]> {
+  const candidates = hosts.filter((h) => h.ip && (looksLikeComputer(h.name) || known.some((k) => k.mac && k.mac === h.mac.toUpperCase())));
+  return Promise.all(candidates.map(async (h) => {
+    const ssh = h.active ? await portOpen(h.ip, 22, 1200) : false;
+    const windows = h.active ? (await portOpen(h.ip, 445, 800)) || (await portOpen(h.ip, 3389, 800)) : null;
+    const configured = known.find((k) => k.host === h.ip || k.host.toLowerCase() === h.name.toLowerCase() || (k.mac && k.mac === h.mac.toUpperCase()));
+    return { name: h.name, ip: h.ip, mac: h.mac.toUpperCase(), active: h.active, connection: h.connection, windows, ssh, configuredAs: configured?.name ?? null };
+  }));
 }

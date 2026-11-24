@@ -32,3 +32,36 @@ test("PC-Befehle und FRITZ!Box-Neustart darf nur der Admin freigeben", () => {
   assert.equal(canApproveAction(adult, { kind: "pc_command", amount_cents: null }).allowed, false);
   assert.equal(canApproveAction(adult, { kind: "fritz_reboot", amount_cents: null }).allowed, false);
 });
+
+import { looksLikeComputer, WindowsPc, discoverComputers } from "../dist/adapters/pc.js";
+import { mkdtempSync as mk } from "node:fs";
+import { tmpdir as td } from "node:os";
+import { join as jn } from "node:path";
+
+test("Computer in der FRITZ!Box-Liste erkennen", () => {
+  for (const n of ["DESKTOP-4KQ7P2L", "LAPTOP-AB12CD", "Lucas-MacBook-Pro", "ThinkPad-X1", "Annikas-PC"]) assert.ok(looksLikeComputer(n), n);
+  for (const n of ["iPhone-von-Luca", "FRITZ-Repeater-3000", "Shelly-Plug", "Echo-Dot", "SamsungTV"]) assert.ok(!looksLikeComputer(n), n);
+});
+
+test("Mehrere Computer: Auswahl nach Name, Nachfrage bei Mehrdeutigkeit", () => {
+  const dir = mk(jn(td(), "hg-pc-"));
+  const cfg = { dataDir: dir, pc: { name: "PC", host: "", port: 22, user: "", mac: "" },
+    pcs: [{ name: "PC", host: "192.168.178.20", port: 22, user: "luca", mac: "" }, { name: "Laptop", host: "192.168.178.31", port: 22, user: "luca", mac: "" }] };
+  const pc = new WindowsPc(cfg);
+  assert.equal(pc.find("laptop").host, "192.168.178.31");
+  assert.equal(pc.find("Luca Laptop").name, "Laptop");
+  assert.throws(() => pc.find(), /Welcher Computer/);
+  assert.throws(() => pc.find("Tablet"), /kenne ich nicht/);
+  const legacy = new WindowsPc({ dataDir: dir, pc: { name: "PC", host: "10.0.0.2", port: 22, user: "x", mac: "" }, pcs: [] });
+  assert.equal(legacy.find().host, "10.0.0.2");
+});
+
+test("Discovery: ausgeschaltete Geräte ohne Netzwerkprüfung, eingerichtete werden erkannt", async () => {
+  const r = await discoverComputers(
+    [{ name: "LAPTOP-AB12", ip: "192.168.178.31", mac: "aa:bb:cc:dd:ee:ff", active: false, connection: "802.11" },
+     { name: "iPhone", ip: "192.168.178.40", mac: "11:22:33:44:55:66", active: true, connection: "802.11" }],
+    [{ name: "Laptop", host: "192.168.178.31", port: 22, user: "luca", mac: "" }]);
+  assert.equal(r.length, 1);
+  assert.equal(r[0].configuredAs, "Laptop");
+  assert.equal(r[0].ssh, false);
+});

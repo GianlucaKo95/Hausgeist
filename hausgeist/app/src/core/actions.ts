@@ -66,7 +66,7 @@ type Payloads = {
  * Stufe-2-Aktionen: Agenten dürfen sie nur beantragen. Ausgeführt wird erst
  * nach Freigabe, mit genau dem eingefrorenen Payload, durch festen Code.
  */
-export interface PcCommandPayload { command: string; purpose: string; timeout_min?: number }
+export interface PcCommandPayload { command: string; purpose: string; timeout_min?: number; computer?: string }
 
 export class ActionService {
   constructor(
@@ -212,10 +212,11 @@ export class ActionService {
         // Genau der freigegebene Befehl – nichts anderes.
         const p = payload as unknown as PcCommandPayload;
         if (!this.pc) throw new Error("PC-Anbindung fehlt");
-        if (!(await this.pc.online())) throw new Error(`${this.config.pc.name} ist aus oder nicht erreichbar.`);
-        const r = await this.pc.run(p.command, Math.min(p.timeout_min ?? 10, 60) * 60_000);
+        const target = this.pc.find(p.computer);
+        if (!(await this.pc.online(target))) throw new Error(`${target.name} ist aus oder nicht erreichbar.`);
+        const r = await this.pc.run(p.command, Math.min(p.timeout_min ?? 10, 60) * 60_000, target);
         const out = [r.stdout, r.stderr && `Fehlerausgabe:\n${r.stderr}`].filter(Boolean).join("\n\n") || "(keine Ausgabe)";
-        return `${p.purpose} – Rückgabewert ${r.code ?? "?"}\n${out}`;
+        return `${target.name}: ${p.purpose} – Rückgabewert ${r.code ?? "?"}\n${out}`;
       }
       case "fritz_reboot": {
         if (!this.fritz) throw new Error("FRITZ!Box-Anbindung fehlt");

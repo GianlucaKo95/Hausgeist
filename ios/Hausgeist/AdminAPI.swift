@@ -71,11 +71,17 @@ struct AdminSettings: Codable {
     var travel_mode: String?
     var bring: BringAccountInfo?
     var mail_check_times: [String]?
+    var pcs: [PcConfig]?
 }
 
 struct FritzInfo: Codable, Hashable { var host: String; var user: String; var password_set: Bool }
 struct FritzSave: Encodable { var host: String; var user: String; var password: String? }
-struct PcConfig: Codable, Hashable { var name: String; var host: String; var port: Int; var user: String; var mac: String }
+struct PcConfig: Codable, Hashable, Identifiable { var id: String { name + host }; var name: String; var host: String; var port: Int; var user: String; var mac: String }
+struct DiscoveredPc: Decodable, Hashable, Identifiable {
+    var id: String { mac + ip }
+    let name: String; let ip: String; let mac: String; let active: Bool; let connection: String
+    let windows: Bool?; let ssh: Bool; let configuredAs: String?
+}
 struct TestResult: Decodable { let ok: Bool; let message: String?; let model: String?; let firmware: String?; let devices: Int? }
 
 struct BankLogin: Codable, Identifiable, Hashable {
@@ -127,6 +133,7 @@ struct SettingsPatch: Encodable {
     var travel_mode: String?
     var bring: BringAccountSave?
     var mail_check_times: [String]?
+    var pcs: [PcConfig]?
 }
 
 struct Mailbox: Codable, Identifiable, Hashable {
@@ -303,14 +310,24 @@ extension APIClient {
         return try await request("api/admin/fritzbox/test", method: "POST", body: [String: String]())
     }
 
-    func testPc() async throws -> TestResult {
+    func testPc(name: String? = nil) async throws -> TestResult {
         if AppConfig.isDemo { return TestResult(ok: true, message: "luca-pc\\luca\nLUCA-PC\nMicrosoft Windows 11 Pro", model: nil, firmware: nil, devices: nil) }
-        return try await request("api/admin/pc/test", method: "POST", body: [String: String]())
+        return try await request("api/admin/pc/test", method: "POST", body: ["name": name ?? ""])
     }
 
-    func forgetPcHost() async throws {
+    func discoverPcs() async throws -> [DiscoveredPc] {
+        if AppConfig.isDemo {
+            return [DiscoveredPc(name: "DESKTOP-4KQ7P2L", ip: "192.168.178.20", mac: "AA:BB:CC:DD:EE:FF", active: true, connection: "Ethernet", windows: true, ssh: true, configuredAs: "PC"),
+                    DiscoveredPc(name: "LAPTOP-AB12CD", ip: "192.168.178.31", mac: "11:22:33:44:55:66", active: true, connection: "802.11", windows: true, ssh: false, configuredAs: nil)]
+        }
+        struct R: Decodable { let computers: [DiscoveredPc] }
+        let r: R = try await request("api/admin/pc/discover", method: "POST", body: [String: String]())
+        return r.computers
+    }
+
+    func forgetPcHost(host: String? = nil) async throws {
         if AppConfig.isDemo { return }
-        let _: OK = try await request("api/admin/pc/forget-host", method: "POST", body: [String: String]())
+        let _: OK = try await request("api/admin/pc/forget-host", method: "POST", body: ["host": host ?? ""])
     }
 
     func mailboxes() async throws -> [Mailbox] {
@@ -432,5 +449,6 @@ enum DemoAdmin {
         bring_lists: [BringListConfig(name: "Zuhause", list_uuid: "11111111-1111-1111-1111-111111111111", entity_id: nil, stores: ["Rewe", "Aldi", "dm"], default: true)],
         fritzbox: FritzInfo(host: "fritz.box", user: "hausgeist", password_set: true),
         pc: PcConfig(name: "Luca-PC", host: "192.168.178.20", port: 22, user: "luca", mac: "AA:BB:CC:DD:EE:FF"),
-        pc_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDemoSchluesselNurFuerDieVorschau hausgeist")
+        pc_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDemoSchluesselNurFuerDieVorschau hausgeist",
+        pcs: [PcConfig(name: "PC", host: "192.168.178.20", port: 22, user: "luca", mac: "AA:BB:CC:DD:EE:FF")])
 }
