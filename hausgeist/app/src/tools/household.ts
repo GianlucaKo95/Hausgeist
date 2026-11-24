@@ -32,7 +32,6 @@ export function householdTools(ctx: ToolContext) {
       if (!a.entity_id.startsWith(`${a.domain}.`) && a.domain !== "homeassistant")
         throw new Error("Domain und entity_id passen nicht zusammen");
       if (isSensitiveHaService(a.domain) || isSensitiveHaService(a.entity_id.split(".")[0])) {
-        if (ctx.user.role === "family") throw new Error("Schlösser, Alarm, Tore und Ähnliches lassen sich über den Familienplaner nicht steuern – bitte in der Hausgeist-App.");
         const r = await ctx.actions.request("ha_service", { domain: a.domain, service: a.service, entity_id: a.entity_id, data: a.data ?? {} },
           { agent: "household", summary: `${a.domain}.${a.service} → ${a.entity_id}`, requestedBy: ctx.user });
         return ok({ status: "Sicherheitsrelevant – Freigabe angefragt", an: r.approvers });

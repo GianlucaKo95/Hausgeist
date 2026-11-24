@@ -166,6 +166,14 @@ export class AppleCalendar {
     return { client, cal, obj };
   }
 
+  /** Einzelnen Termin lesen (für Änderungen: aktuelle Werte und Kalendername). */
+  async getEvent(ref: string): Promise<CalendarEvent> {
+    const { cal, obj } = await this.object(ref);
+    const [ev] = parseEvents(String(obj.data), String(cal.displayName ?? ""));
+    if (!ev) throw new Error("Termin nicht lesbar");
+    return { ...ev, ref };
+  }
+
   async updateEvent(ref: string, ev: EventInput, moveTo?: string) {
     const { client, cal, obj } = await this.object(ref);
     const uid = String(obj.data).match(/^UID:(.+)$/m)?.[1]?.trim() ?? randomUUID();

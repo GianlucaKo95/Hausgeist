@@ -2,12 +2,20 @@ import { parseBerlin, berlinText, berlinIso } from "../core/time.js";
 import { tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { db } from "../core/db.js";
-import { ok, safe, findUser, type ToolContext } from "./context.js";
+import { ok, safe, findUser, requireAdult, type ToolContext } from "./context.js";
 import { whereIs, zones, normZone } from "../core/location.js";
 
 export function familyTools(ctx: ToolContext) {
   /** Wem gehört ein Kalender laut Konfiguration? "shared" = Familienkalender. */
   const ownerOf = (calendar: string) => ctx.calendar.ownerOf(calendar);
+
+  /** Ändern/Löschen nur im eigenen oder gemeinsamen Kalender. */
+  const mayEdit = (calendar: string) => {
+    requireAdult(ctx);
+    const owner = ownerOf(calendar);
+    if (!(owner === "shared" || owner?.toLowerCase() === ctx.user.name.toLowerCase()))
+      throw new Error(`„${calendar}“ gehört ${owner ?? "jemand anderem"} – ändern oder löschen nur im eigenen oder gemeinsamen Kalender`);
+  };
 
   return [
     tool("list_places", "Orte (Zonen) aus Home Assistant, z. B. home, Arbeit, Schule – für Orts-Erinnerungen.", {}, safe(async () =>
@@ -64,7 +72,12 @@ export function familyTools(ctx: ToolContext) {
       const from = parseBerlin(a.from).toISOString(), to = parseBerlin(a.to).toISOString();
       const evs = await ctx.calendar.events(from, to, a.calendars);
       // Uhrzeit fertig in deutscher Zeit mitgeben, damit nichts umgerechnet werden muss
-      return ok(evs.map((e) => ({ ...e, wann: e.allDay ? `${e.start.slice(0, 10)} ganztägig` : `${berlinText(new Date(e.start))} Uhr${e.end ? ` bis ${berlinText(new Date(e.end)).slice(-5)} Uhr` : ""}` })));
+      return ok(evs.map(({ ref, ...e }) => ({
+        ...e,
+        // termin_id nur bei Apple-Terminen ohne Serie – damit lassen sie sich ändern/löschen
+        termin_id: ref && !e.recurring ? Buffer.from(ref).toString("base64url") : undefined,
+        wann: e.allDay ? `${e.start.slice(0, 10)} ganztägig` : `${berlinText(new Date(e.start))} Uhr${e.end ? ` bis ${berlinText(new Date(e.end)).slice(-5)} Uhr` : ""}`,
+      })));
     })),
 
     tool("create_event", "Termin eintragen. Im eigenen oder gemeinsamen Kalender direkt (Stufe 1), im Kalender einer anderen Person nur nach Freigabe (Stufe 2).", {
@@ -77,8 +90,7 @@ export function familyTools(ctx: ToolContext) {
     }, safe(async (a) => {
       if (!ctx.calendar.apple.enabled) throw new Error("Apple-Kalender ist nicht konfiguriert – eintragen geht nur dort");
       const owner = ownerOf(a.calendar);
-      // Der Familienplaner darf in alle Kalender schreiben (gemeinsames Familienbrett)
-      const mine = ctx.user.role === "family" || owner === "shared" || owner?.toLowerCase() === ctx.user.name.toLowerCase();
+      const mine = owner === "shared" || owner?.toLowerCase() === ctx.user.name.toLowerCase();
       const ev = { calendar: a.calendar, title: a.title, start: berlinIso(parseBerlin(a.start)), end: berlinIso(parseBerlin(a.end)), location: a.location ?? null, notes: a.notes ?? null };
       if (mine) {
         await ctx.calendar.apple.createEvent(a.calendar, ev);
@@ -87,6 +99,49 @@ export function familyTools(ctx: ToolContext) {
       const when = new Date(a.start).toLocaleString("de-DE", { timeZone: "Europe/Berlin", dateStyle: "short", timeStyle: "short" });
       const r = await ctx.actions.request("calendar_event", ev, { agent: "family", summary: `${a.title}\n${when} in „${a.calendar}“`, requestedBy: ctx.user });
       return ok({ status: "Kalender einer anderen Person – Freigabe angefragt", an: r.approvers });
+    })),
+
+    tool("update_event", "Bestehenden Termin ändern (Zeit, Titel, Ort, Notiz) oder in einen anderen Kalender verschieben. termin_id aus list_events. Nur angegebene Felder ändern sich. Serientermine gehen nicht.", {
+      termin_id: z.string().min(8),
+      title: z.string().optional(),
+      start: z.string().optional().describe("ISO-Zeit mit Zeitzone; ohne Zeitzone gilt deutsche Zeit"),
+      end: z.string().optional(),
+      location: z.string().nullable().optional(),
+      notes: z.string().nullable().optional(),
+      calendar: z.string().optional().describe("Nur zum Verschieben in einen anderen Kalender"),
+    }, safe(async (a) => {
+      const ref = Buffer.from(a.termin_id, "base64url").toString("utf8");
+      const cur = await ctx.calendar.apple.getEvent(ref);
+      mayEdit(cur.calendar);
+      if (a.calendar) mayEdit(a.calendar);
+      let start: string, end: string;
+      if (cur.allDay && !a.start) { start = cur.start; end = cur.end ?? cur.start; }
+      else {
+        const s0 = a.start ? parseBerlin(a.start) : new Date(cur.start);
+        // Ohne neues Ende bleibt die Dauer gleich
+        const dur = cur.end && !cur.allDay ? new Date(cur.end).getTime() - new Date(cur.start).getTime() : 3_600_000;
+        const e0 = a.end ? parseBerlin(a.end) : new Date(s0.getTime() + dur);
+        if (e0 < s0) throw new Error("Ende liegt vor dem Beginn");
+        start = berlinIso(s0); end = berlinIso(e0);
+      }
+      const allDay = cur.allDay && !a.start;
+      await ctx.calendar.apple.updateEvent(ref, {
+        title: a.title ?? cur.title, start, end, allDay,
+        location: a.location === undefined ? cur.location : a.location,
+        notes: a.notes === undefined ? cur.notes ?? null : a.notes,
+      }, a.calendar);
+      const when = allDay ? `${start.slice(0, 10)} ganztägig` : `${berlinText(new Date(start))} Uhr`;
+      return ok(`Termin „${a.title ?? cur.title}“ geändert: ${when}${a.calendar ? ` in „${a.calendar}“` : ""}`);
+    })),
+
+    tool("delete_event", "Termin löschen (termin_id aus list_events). Vorher kurz bestätigen lassen, welcher Termin gemeint ist. Serientermine gehen nicht.", {
+      termin_id: z.string().min(8),
+    }, safe(async (a) => {
+      const ref = Buffer.from(a.termin_id, "base64url").toString("utf8");
+      const cur = await ctx.calendar.apple.getEvent(ref);
+      mayEdit(cur.calendar);
+      await ctx.calendar.apple.deleteEvent(ref);
+      return ok(`Termin „${cur.title}“ gelöscht`);
     })),
 
     tool("list_family_tasks", "Gemeinsame und eigene Aufgaben.", { include_done: z.boolean().default(false) }, safe(async (a) => {

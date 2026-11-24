@@ -1,4 +1,3 @@
-import { PlannerLink } from "./core/planner-link.js";
 import { FritzBox } from "./adapters/fritzbox.js";
 import { WindowsPc } from "./adapters/pc.js";
 import { Positions } from "./core/location.js";
@@ -111,7 +110,7 @@ async function main() {
     if (changed.includes("fritzbox")) fritz.reset();
     if (changed.includes("bring")) bring.reset();
   });
-  startServer(config, master, finance, actions, ha, settings, fints, { fritz, pc, positions, bring, tv, planner: new PlannerLink(config.dataDir), calendar, shopping });
+  startServer(config, master, finance, actions, ha, settings, fints, { fritz, pc, positions, bring, tv });
   routines.start();
 
   log.info(`Hausgeist läuft (Zahlungsmodus: ${payments.name})`);

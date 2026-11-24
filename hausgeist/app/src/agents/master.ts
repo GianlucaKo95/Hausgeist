@@ -93,6 +93,7 @@ Ist kein Fernseher an, sag, dass der Stick im Standby ist.`,
     prompt: `Du bist der Personal-&-Family-Agent. Du koordinierst den Familienkalender, legst Termine und Aufgaben an und schickst Erinnerungen.
 Unterscheide gemeinsame und persönliche Aufgaben. Prüfe vor neuen Terminen auf Überschneidungen. Zeiten immer in deutscher Zeit (Europe/Berlin) und im 24-Stunden-Format („19:00 Uhr“, nie „7PM/8PM“). Für Termine nutze das Feld „wann“ aus list_events – nicht selbst umrechnen.
 Erinnerungen zu einem Zeitpunkt („morgen um 8“, „jeden Montag“) legst du mit create_reminder an.
+Termine verschieben/ändern mit update_event, löschen mit delete_event (termin_id aus list_events; vor dem Löschen nachfragen, wenn unklar ist, welcher gemeint ist).
 Orte: Mit create_location_reminder erinnerst du beim Verlassen oder Erreichen eines Ortes (Zonen aus list_places). Den Standort gibt es nur für die anfragende Person selbst (my_location) – nie den von anderen nennen oder abfragen.
 Vor Terminen mit Ortsangabe meldet sich der Hausgeist automatisch, wann man losfahren muss (Fahrzeit vom aktuellen Standort).`,
     server: "family",
@@ -139,16 +140,6 @@ async function recentConversations(userId: string): Promise<string> {
   if (!data?.length) return "";
   return `\nLetzte Gespräche (Themen): ${data.map((c) => `„${c.title}“ (${new Date(c.updated_at).toLocaleDateString("de-DE", { timeZone: "Europe/Berlin" })})`).join(", ")}\n`;
 }
-
-/** Was der Familienaccount (Familienplaner) darf: Kalender, Einkaufsliste, Haus (ohne Sicherheitsgeräte), Fernseher. */
-const FAMILY_AGENTS = new Set(["family", "shopping", "household", "tv"]);
-const FAMILY_TOOLS: Record<string, string[] | "*"> = {
-  family: ["list_calendars", "list_events", "create_event", "list_family_tasks", "add_family_task", "complete_family_task", "remind", "create_reminder", "list_reminders", "cancel_reminder"],
-  shopping: ["shopping_list", "add_to_list", "check_off", "recurring_purchases", "list_recurring_items"],
-  household: ["list_entities", "get_entity", "call_service", "energy_status", "list_chores", "save_chore", "complete_chore", "list_areas", "schedule_device_action", "list_scheduled_actions", "cancel_scheduled_action"],
-  tv: "*",
-  master: ["remember", "recall", "forget", "find_notes", "save_note"],
-};
 
 function nowBerlin(): string {
   return new Date().toLocaleString("de-DE", { timeZone: "Europe/Berlin", weekday: "long", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) + ` Uhr (ISO ${berlinIso(new Date())})`;
@@ -197,7 +188,7 @@ export class MasterAgent {
     return `Du bist Hausgeist, der persönliche Familienassistent des Haushalts.
 Jetzt: ${now} (Europe/Berlin).
 Du sprichst mit ${user.name} (Rolle: ${user.role}).
-Haushalt: ${(members ?? []).filter((m) => m.role !== "family").map((m) => `${m.name} (${m.role})`).join(", ")}.${user.role === "family" ? "\nDu sprichst über den Familienplaner (gemeinsames Gerät, z. B. Tablet in der Küche) – wer gerade tippt, weißt du nicht. Hier gibt es nur Kalender, Einkaufsliste, Aufgaben, Haussteuerung und Fernseher. Für Finanzen, Mail, Freigaben, Schlösser oder Persönliches: auf die Hausgeist-App verweisen. Gib keine persönlichen Erinnerungen oder Gedächtnisinhalte einzelner Personen preis." : ""}
+Haushalt: ${(members ?? []).map((m) => `${m.name} (${m.role})`).join(", ")}.
 Gespeicherte Präferenzen: ${JSON.stringify(prefs ?? [])}
 ${memoryBlock(user.name, await loadMemories(user.id))}${await recentConversations(user.id)}
 
@@ -258,14 +249,9 @@ ${SAFETY}`;
       ...(user.role === "admin" ? { it: as(itTools(ctx)) } : {}),
     };
     // Kinder bekommen die übrigen Werkzeuge gar nicht erst zu sehen.
-    // Der Familienaccount (Familienplaner) nur Kalender, Einkaufsliste, Haus und Fernseher – ohne Freigaben.
     const toolsets = user.role === "child"
       ? Object.fromEntries(Object.entries(all).filter(([k]) => childAllowed.has(k) || k === "master"))
-      : user.role === "family"
-        ? Object.fromEntries(Object.entries(all)
-          .filter(([k]) => k in FAMILY_TOOLS)
-          .map(([k, t]) => [k, FAMILY_TOOLS[k] === "*" ? t : t.filter((x) => (FAMILY_TOOLS[k] as string[]).includes(x.name))]))
-        : all;
+      : all;
 
     const mcpServers = Object.fromEntries(
       Object.entries(toolsets).map(([name, tools]) => [name, createSdkMcpServer({ name, version: "0.2.0", tools })]),
@@ -275,7 +261,6 @@ ${SAFETY}`;
     const agents: Record<string, AgentDefinition> = {};
     for (const [key, def] of Object.entries(SUBAGENTS)) {
       if (user.role === "child" && !childAllowed.has(key)) continue;
-      if (user.role === "family" && !FAMILY_AGENTS.has(key)) continue;
       if (!toolsets[def.server]) continue; // z. B. IT-Agent nur für den Admin
       agents[key] = {
         description: def.description,

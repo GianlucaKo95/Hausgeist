@@ -157,7 +157,7 @@ export class Routines {
   }
 
   private async adults(): Promise<AppUser[]> {
-    return (await listUsers()).filter((u) => u.role !== "child" && u.role !== "family" && u.notify_service);
+    return (await listUsers()).filter((u) => u.role !== "child" && u.notify_service);
   }
 
   // ── FinTS-Freischaltung ────────────────────────────────────────────────
@@ -318,7 +318,7 @@ export class Routines {
 
       const targets = (a.notify as string[]).length
         ? users.filter((u) => (a.notify as string[]).some((n) => n.toLowerCase() === u.name.toLowerCase()))
-        : users.filter((u) => u.role !== "child" && u.role !== "family");
+        : users.filter((u) => u.role !== "child");
       let extra = "";
       if (a.action) {
         const act = a.action as { domain: string; service: string; entity_id: string; data?: Record<string, unknown> };
@@ -370,7 +370,7 @@ export class Routines {
     for (const u of users) {
       if (!u.notify_service) continue;
       const lines: string[] = [];
-      if (u.role !== "child" && u.role !== "family") {
+      if (u.role !== "child") {
         for (const d of due) {
           const days = Math.round((Date.parse(d.due_date) - Date.parse(today)) / 86_400_000);
           lines.push(days < 0 ? `❗ Überfällig: ${d.title}` : days === 0 ? `⏰ Heute: ${d.title}` : `📅 In ${days} Tagen: ${d.title}`);

@@ -114,7 +114,7 @@ ${events.map((e) => describe(e, hub.ownerOf(e.calendar))).join("\n")}`;
     const at = parseBerlin(r.remind_at);
     if (Number.isNaN(at.getTime()) || at.getTime() < Date.now() - 60_000) continue;
     const targets = r.person.toLowerCase() === "alle"
-      ? users.filter((u) => u.role !== "child" && u.role !== "family")
+      ? users.filter((u) => u.role !== "child")
       : users.filter((u) => u.name.toLowerCase() === r.person.toLowerCase());
     for (const u of targets) {
       const { data } = await db().from("reminders").upsert(
