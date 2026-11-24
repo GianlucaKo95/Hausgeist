@@ -1,3 +1,4 @@
+import { parseBerlin, berlinText, berlinIso } from "../core/time.js";
 import { tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { db } from "../core/db.js";
@@ -60,8 +61,10 @@ export function familyTools(ctx: ToolContext) {
       calendars: z.array(z.string()).optional(),
     }, safe(async (a) => {
       if (!ctx.calendar.enabled) return ok("Kein Kalender konfiguriert.");
-      const from = new Date(a.from).toISOString(), to = new Date(a.to).toISOString();
-      return ok(await ctx.calendar.events(from, to, a.calendars));
+      const from = parseBerlin(a.from).toISOString(), to = parseBerlin(a.to).toISOString();
+      const evs = await ctx.calendar.events(from, to, a.calendars);
+      // Uhrzeit fertig in deutscher Zeit mitgeben, damit nichts umgerechnet werden muss
+      return ok(evs.map((e) => ({ ...e, wann: e.allDay ? `${e.start.slice(0, 10)} ganztägig` : `${berlinText(new Date(e.start))} Uhr${e.end ? ` bis ${berlinText(new Date(e.end)).slice(-5)} Uhr` : ""}` })));
     })),
 
     tool("create_event", "Termin eintragen. Im eigenen oder gemeinsamen Kalender direkt (Stufe 1), im Kalender einer anderen Person nur nach Freigabe (Stufe 2).", {
@@ -75,7 +78,7 @@ export function familyTools(ctx: ToolContext) {
       if (!ctx.calendar.apple.enabled) throw new Error("Apple-Kalender ist nicht konfiguriert – eintragen geht nur dort");
       const owner = ownerOf(a.calendar);
       const mine = owner === "shared" || owner?.toLowerCase() === ctx.user.name.toLowerCase();
-      const ev = { calendar: a.calendar, title: a.title, start: a.start, end: a.end, location: a.location ?? null, notes: a.notes ?? null };
+      const ev = { calendar: a.calendar, title: a.title, start: berlinIso(parseBerlin(a.start)), end: berlinIso(parseBerlin(a.end)), location: a.location ?? null, notes: a.notes ?? null };
       if (mine) {
         await ctx.calendar.apple.createEvent(a.calendar, ev);
         return ok(`Termin „${a.title}“ eingetragen`);
@@ -127,7 +130,7 @@ export function familyTools(ctx: ToolContext) {
     }, safe(async (a) => {
       const nowText = new Date().toLocaleString("de-DE", { timeZone: "Europe/Berlin", dateStyle: "short", timeStyle: "short" });
       if (a.in_minutes === undefined && !a.at) throw new Error("in_minutes oder at angeben");
-      const due = a.in_minutes !== undefined ? new Date(Date.now() + a.in_minutes * 60_000) : new Date(a.at!);
+      const due = a.in_minutes !== undefined ? new Date(Date.now() + a.in_minutes * 60_000) : parseBerlin(a.at!);
       if (Number.isNaN(due.getTime())) throw new Error("Zeitpunkt nicht lesbar");
       // Schutz vor falsch berechneten Zeiten: Vergangenheit ablehnen statt still sofort auszulösen
       if (due.getTime() < Date.now() - 60_000) throw new Error(`Der Zeitpunkt liegt in der Vergangenheit – jetzt ist ${nowText}. Für „in X Minuten“ in_minutes verwenden.`);

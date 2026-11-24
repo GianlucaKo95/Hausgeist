@@ -48,7 +48,7 @@ test("iCal-Parser", () => {
   const ev = parseEvents(ical, "Familie");
   assert.equal(ev.length, 2);
   assert.equal(ev[0].title, "Elternabend, Klasse 2");
-  assert.equal(ev[0].start, "2026-11-24T18:30:00");
+  assert.equal(ev[0].start, "2026-11-24T18:30:00+01:00");
   assert.equal(ev[0].location, "Schule am Park");
   assert.equal(ev[1].allDay, true);
   assert.equal(icalDate("20261124T173000Z"), "2026-11-24T17:30:00Z");

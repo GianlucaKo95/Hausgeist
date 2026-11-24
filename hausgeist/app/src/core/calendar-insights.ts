@@ -1,3 +1,4 @@
+import { berlinIso, berlinText, parseBerlin } from "./time.js";
 import Anthropic from "@anthropic-ai/sdk";
 import { createHash } from "node:crypto";
 import { z } from "zod";
@@ -61,7 +62,7 @@ const tool = {
 };
 
 function describe(ev: CalendarEvent, owner: string | null): string {
-  const when = ev.allDay ? `${ev.start.slice(0, 10)} (ganztägig)` : new Date(ev.start).toLocaleString("de-DE", { timeZone: "Europe/Berlin", weekday: "short", dateStyle: "short", timeStyle: "short" });
+  const when = ev.allDay ? `${ev.start.slice(0, 10)} (ganztägig)` : `${berlinText(new Date(ev.start))} Uhr (deutsche Zeit, ${berlinIso(new Date(ev.start))})`;
   return `- ${when}: ${ev.title}${ev.location ? ` @ ${ev.location}` : ""} [Kalender: ${ev.calendar}, gehört: ${owner ?? "unbekannt"}]`;
 }
 
@@ -85,7 +86,7 @@ export async function planCalendarReminders(config: Config, hub: CalendarHub, ll
   const users = await listUsers();
   const { data: prefs } = await db().from("preferences").select("key, value, user_id");
   const nowText = now.toLocaleString("de-DE", { timeZone: "Europe/Berlin", dateStyle: "full", timeStyle: "short" });
-  const prompt = `Jetzt: ${nowText} (Europe/Berlin, ISO ${now.toISOString()})
+  const prompt = `Jetzt: ${nowText} (Europe/Berlin, ISO ${berlinIso(now)})
 Haushalt: ${users.map((u) => `${u.name} (${u.role})`).join(", ")}
 Präferenzen: ${JSON.stringify((prefs ?? []).map((p) => ({ fuer: users.find((u) => u.id === p.user_id)?.name ?? "Haushalt", key: p.key, value: p.value })))}
 
@@ -110,7 +111,7 @@ ${events.map((e) => describe(e, hub.ownerOf(e.calendar))).join("\n")}`;
 
   let created = 0;
   for (const r of parsed.data.reminders) {
-    const at = new Date(r.remind_at);
+    const at = parseBerlin(r.remind_at);
     if (Number.isNaN(at.getTime()) || at.getTime() < Date.now() - 60_000) continue;
     const targets = r.person.toLowerCase() === "alle"
       ? users.filter((u) => u.role !== "child")

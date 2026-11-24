@@ -1,3 +1,4 @@
+import { icalToBerlin, isoToBerlin } from "../core/time.js";
 import { DAVClient, type DAVCalendar } from "tsdav";
 import { randomUUID } from "node:crypto";
 import type { Config } from "../core/config.js";
@@ -25,8 +26,8 @@ export function parseEvents(ical: string, calendar: string): CalendarEvent[] {
         events.push({
           calendar,
           title: unescape(cur.SUMMARY?.value ?? "(ohne Titel)"),
-          start: icalDate(start.value),
-          end: cur.DTEND ? icalDate(cur.DTEND.value) : null,
+          start: icalToBerlin(start.value, start.params),
+          end: cur.DTEND ? icalToBerlin(cur.DTEND.value, cur.DTEND.params) : null,
           allDay: start.params.includes("VALUE=DATE") && !start.params.includes("DATE-TIME"),
           location: cur.LOCATION ? unescape(cur.LOCATION.value) : null,
         });
@@ -123,7 +124,8 @@ export class AppleCalendar {
       const objs = await client.fetchCalendarObjects({ calendar: cal, timeRange: { start: fromIso, end: toIso }, expand: true });
       for (const o of objs) if (o.data) all.push(...parseEvents(String(o.data), String(cal.displayName ?? "")));
     }
-    return all.sort((a, b) => a.start.localeCompare(b.start));
+    const t = (v: string) => new Date(v.length === 10 ? `${v}T00:00:00` : v).getTime();
+    return all.sort((a, b) => t(a.start) - t(b.start));
   }
 
   async createEvent(calendarName: string, ev: { title: string; start: string; end: string; location?: string | null; notes?: string | null }) {
@@ -221,7 +223,7 @@ export class CalendarHub {
         for (const i of items) {
           all.push({
             calendar: c.name, title: i.summary, location: i.location ?? null,
-            start: i.start.dateTime ?? i.start.date ?? "", end: i.end?.dateTime ?? i.end?.date ?? null,
+            start: isoToBerlin(i.start.dateTime ?? i.start.date ?? ""), end: (i.end?.dateTime ?? i.end?.date) ? isoToBerlin(i.end?.dateTime ?? i.end?.date ?? "") : null,
             allDay: Boolean(i.start.date && !i.start.dateTime),
           });
         }
@@ -230,6 +232,7 @@ export class CalendarHub {
       }
     }
     if (errors.length && all.length === 0) throw new Error(errors.join("; "));
-    return all.sort((a, b) => a.start.localeCompare(b.start));
+    const t = (v: string) => new Date(v.length === 10 ? `${v}T00:00:00` : v).getTime();
+    return all.sort((a, b) => t(a.start) - t(b.start));
   }
 }

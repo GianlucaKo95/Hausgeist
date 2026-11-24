@@ -1,3 +1,4 @@
+import { berlinIso } from "../core/time.js";
 import { loadMemories, memoryBlock } from "../core/long-memory.js";
 import { itTools } from "../tools/it.js";
 import { query, createSdkMcpServer, type AgentDefinition, type SDKUserMessage, type SdkMcpToolDefinition } from "@anthropic-ai/claude-agent-sdk";
@@ -80,7 +81,7 @@ Nutze list_areas für Räume („alle Lichter im Wohnzimmer“). Zeitgesteuertes
   family: {
     description: "Persönliches und Familie: Apple-Kalender, Termine, Erinnerungen zu Zeitpunkten (auch wiederkehrend), Familienaufgaben, gemeinsame und persönliche Organisation.",
     prompt: `Du bist der Personal-&-Family-Agent. Du koordinierst den Familienkalender, legst Termine und Aufgaben an und schickst Erinnerungen.
-Unterscheide gemeinsame und persönliche Aufgaben. Prüfe vor neuen Terminen auf Überschneidungen. Zeiten immer in Europe/Berlin.
+Unterscheide gemeinsame und persönliche Aufgaben. Prüfe vor neuen Terminen auf Überschneidungen. Zeiten immer in deutscher Zeit (Europe/Berlin) und im 24-Stunden-Format („19:00 Uhr“, nie „7PM/8PM“). Für Termine nutze das Feld „wann“ aus list_events – nicht selbst umrechnen.
 Erinnerungen zu einem Zeitpunkt („morgen um 8“, „jeden Montag“) legst du mit create_reminder an.
 Orte: Mit create_location_reminder erinnerst du beim Verlassen oder Erreichen eines Ortes (Zonen aus list_places). Den Standort gibt es nur für die anfragende Person selbst (my_location) – nie den von anderen nennen oder abfragen.
 Vor Terminen mit Ortsangabe meldet sich der Hausgeist automatisch, wann man losfahren muss (Fahrzeit vom aktuellen Standort).`,
@@ -130,7 +131,7 @@ async function recentConversations(userId: string): Promise<string> {
 }
 
 function nowBerlin(): string {
-  return new Date().toLocaleString("de-DE", { timeZone: "Europe/Berlin", weekday: "long", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  return new Date().toLocaleString("de-DE", { timeZone: "Europe/Berlin", weekday: "long", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) + ` Uhr (ISO ${berlinIso(new Date())})`;
 }
 
 export interface ChatSession {
