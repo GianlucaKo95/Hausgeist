@@ -1,3 +1,7 @@
+import { BANKS } from "./config.js";
+import { BANK_INFO, blzFromIban, type FinTSProvider } from "../adapters/payment.js";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { Config } from "./config.js";
 import { db, listUsers, audit } from "./db.js";
 import { formatEuro, entityAllowed, isSensitiveHaService, approversFor, canApproveAction, type AppUser, type ActionKind } from "./checks.js";
@@ -72,6 +76,7 @@ export class Routines {
     private readonly config: Config,
     private readonly ha: HomeAssistant,
     private readonly base: Omit<ToolContext, "user">,
+    private readonly fints?: FinTSProvider,
   ) {
     this.llm = new Anthropic({ apiKey: config.anthropic_api_key });
   }
@@ -113,6 +118,7 @@ export class Routines {
       this.run("kalender", () => this.calendarInsights());
     }
     if (now.time >= "06:30" && this.once("preise", now.date)) this.run("preise", () => this.priceWatches());
+    if (now.time >= "10:15" && this.once("fints", now.date)) this.run("fints", () => this.fintsActivation(now.date));
     if (now.hour !== this.lastHour) {
       this.lastHour = now.hour;
       if (now.hour >= 8 && now.hour <= 20) this.run("freigaben", () => this.staleApprovals());
@@ -125,6 +131,35 @@ export class Routines {
 
   private async adults(): Promise<AppUser[]> {
     return (await listUsers()).filter((u) => u.role !== "child" && u.notify_service);
+  }
+
+  // ── FinTS-Freischaltung ────────────────────────────────────────────────
+  /** Einmal täglich: Kennt die Bank die Registrierungsnummer schon? Meldet nur Änderungen. */
+  private async fintsActivation(today: string): Promise<void> {
+    if (!this.fints || !this.config.fints_product_id) return;
+    const file = join(this.config.dataDir, "fints-status.json");
+    let status: Record<string, { state: string; since: string }> = {};
+    try { status = JSON.parse(readFileSync(file, "utf8")); } catch { /* erste Prüfung */ }
+    const admins = (await listUsers()).filter((u) => u.role === "admin" && u.notify_service);
+    for (const bank of BANKS) {
+      if (!this.config.bank_logins[bank]) continue;
+      const prev = status[bank]?.state;
+      if (prev === "active" || prev === "pin") continue; // erledigt bzw. erst nach neuer PIN wieder prüfen
+      const { data: acc } = await db().from("accounts").select("iban").eq("bank", bank).limit(1);
+      if (!acc?.[0]) continue;
+      const state = await this.fints.probe(bank, blzFromIban(acc[0].iban));
+      if (state === prev) continue;
+      status[bank] = { state, since: today };
+      const name = BANK_INFO[bank].name;
+      if (state === "active") {
+        await this.notifyUsers(admins, `${name} ist freigeschaltet`, "Die Bank kennt jetzt die Registrierungsnummer des Hausgeists. Überweisungen über dieses Konto sind möglich.");
+      } else if (state === "pin") {
+        // Nicht weiter probieren – sonst droht eine PIN-Sperre.
+        await this.notifyUsers(admins, `${name}: Anmeldung abgelehnt`, "Die Bank meldet einen falschen Anmeldenamen oder eine falsche PIN. Bitte in der App unter Konten prüfen.");
+      }
+      log.info(`FinTS ${name}: ${state}`);
+    }
+    writeFileSync(file, JSON.stringify(status, null, 2), { mode: 0o600 });
   }
 
   // ── Erinnerungen ─────────────────────────────────────────────────────────

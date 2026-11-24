@@ -1,3 +1,5 @@
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { ImapFlow } from "imapflow";
 import nodemailer from "nodemailer";
@@ -100,6 +102,16 @@ const AccountBody = z.object({
 });
 
 const PayeeBody = z.object({ name: z.string().min(1), iban: z.string(), default_account_id: z.string().uuid().nullable().optional() });
+
+/** Neue Zugangsdaten: Freischaltungs-Prüfung für diese Bank wieder aufnehmen. */
+function resetFintsStatus(dataDir: string, bank: BankKey): void {
+  const file = join(dataDir, "fints-status.json");
+  try {
+    const status = JSON.parse(readFileSync(file, "utf8"));
+    delete status[bank];
+    writeFileSync(file, JSON.stringify(status, null, 2), { mode: 0o600 });
+  } catch { /* noch keine Prüfung */ }
+}
 
 /** iCloud-Mail nutzt dasselbe App-Passwort wie die iCloud-Kalender – dann muss man es nicht zweimal eingeben. */
 function icloudFallback(config: Config, host?: string, user?: string): string | undefined {
@@ -369,6 +381,7 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
       if (!pin) throw new HttpError(400, "Bitte die PIN eingeben.");
       const next = { ...config.bank_logins, [bank]: { login: body.login, pin, ...(body.url ? { url: body.url } : {}) } };
       await d.settings.update({ bank_logins: next });
+      resetFintsStatus(config.dataDir, bank);
       await audit({ agent: "admin", action: "bank_login", level: 1, result: bank, user_id: user.id });
       json(res, 200, { ok: true });
       return true;

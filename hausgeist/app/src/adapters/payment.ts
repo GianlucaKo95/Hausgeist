@@ -161,6 +161,28 @@ export class FinTSProvider implements PaymentProvider {
     throw new Error("Die Bank hat nach der Freigabe keine Konten geliefert.");
   }
 
+  /**
+   * Prüft ohne Rückfrage, ob die Bank die Registrierungsnummer schon kennt.
+   * Wartet NIE auf eine App-Freigabe: verlangt die Bank eine, ist die Nummer ja angenommen.
+   */
+  async probe(bank: BankKey, blz: string): Promise<"active" | "pending" | "pin" | "error"> {
+    try {
+      const { client } = this.client(bank, blz);
+      await client.accounts();
+      return "active";
+    } catch (e) {
+      if (e instanceof fints.TanRequiredError) {
+        await e.dialog?.end().catch(() => undefined);
+        return "active";
+      }
+      if (e instanceof fints.PinError) return "pin";
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/9078|nicht registriert/i.test(msg)) return "pending";
+      log.warn(`FinTS-Prüfung ${BANK_INFO[bank].name}: ${msg}`);
+      return "error";
+    }
+  }
+
   /** Verbindungstest aus der App: Konten und TAN-Verfahren anzeigen. */
   async test(bank: BankKey, blz: string, login?: { login: string; pin: string; url?: string }, hooks?: TransferHooks): Promise<BankTestResult> {
     try {

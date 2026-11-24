@@ -70,7 +70,7 @@ async function main() {
   const shopping = new ShoppingList(config, ha);
   const base = { config, ha, calendar, paperless, actions, finance, intake, shopping };
   const master = new MasterAgent(config, base);
-  const routines = new Routines(config, ha, base);
+  const routines = new Routines(config, ha, base, fints);
 
   ha.onNotificationAction((action, haUserId) => {
     (async () => {
