@@ -1,3 +1,5 @@
+import { loadState, runDay } from "./paper-trading.js";
+import { quoteTool } from "../tools/trading.js";
 import { BANKS } from "./config.js";
 import { Travel, whereIs, zoneEdge, leaveAt } from "./location.js";
 import { BANK_INFO, blzFromIban, type FinTSProvider } from "../adapters/payment.js";
@@ -71,6 +73,8 @@ export class Routines {
   private lastDaily: Record<string, string> = {};
   private lastHour = -1;
   private lastAlertCheck = 0;
+  private lastTradingCheck = 0;
+  private paperRetryAt = 0;
   private lastDepartureCheck = 0;
   private readonly travel: Travel;
   private readonly llm: Anthropic;
@@ -145,11 +149,33 @@ export class Routines {
       }
     }
     if (now.time >= "06:30" && this.once("preise", now.date)) this.run("preise", () => this.priceWatches());
+    if (now.weekday >= 1 && now.weekday <= 5 && Date.now() - this.lastTradingCheck >= 60_000) {
+      this.lastTradingCheck = Date.now();
+      this.run("musterdepot", () => this.paperTrading(now.date, now.time));
+    }
     if (now.time >= "10:15" && this.once("fints", now.date)) this.run("fints", () => this.fintsActivation(now.date));
     if (now.hour !== this.lastHour) {
       this.lastHour = now.hour;
       if (now.hour >= 8 && now.hour <= 20) this.run("freigaben", () => this.staleApprovals());
     }
+  }
+
+  /** Abendfazit des Musterdepots nach Börsenschluss (nur Papier). */
+  private async paperTrading(date: string, time: string): Promise<void> {
+    const s = await loadState();
+    if (!s?.enabled || time < s.report_time || this.lastDaily.paper === date) return;
+    if (Date.now() < this.paperRetryAt) return;
+    this.once("paper", date);
+    let r;
+    try { r = await runDay(this.config, quoteTool(), date); }
+    catch (e) {
+      // z. B. Kursdienst kurz weg: in 30 Minuten noch einmal (höchstens bis 23 Uhr)
+      if (time < "23:00") { delete this.lastDaily.paper; this.paperRetryAt = Date.now() + 30 * 60_000; }
+      throw e;
+    }
+    if (!r) return;
+    const admins = (await listUsers()).filter((u) => u.role === "admin");
+    await this.notifyUsers(admins, "Musterdepot – Tagesfazit", r.text.slice(0, 1500));
   }
 
   private async notifyUsers(users: AppUser[], title: string, message: string): Promise<void> {
