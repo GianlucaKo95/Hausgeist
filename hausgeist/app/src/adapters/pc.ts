@@ -31,6 +31,26 @@ export function encodePowerShell(script: string): string {
   return Buffer.from(full, "utf16le").toString("base64");
 }
 
+/**
+ * SSH-Befehle laufen in einer unsichtbaren Hintergrundsitzung – Fenster (Browser, Programme)
+ * erscheinen dort nicht. Für Sichtbares wird der Befehl als einmalige Aufgabe in der Sitzung
+ * des angemeldeten Benutzers gestartet und die Aufgabe danach wieder entfernt.
+ */
+export function desktopWrapper(script: string): string {
+  const inner = encodePowerShell(script);
+  return `$u = (Get-CimInstance Win32_ComputerSystem).UserName
+if (-not $u) { $q = (query user 2>$null | Select-String 'Aktiv|Active' | Select-Object -First 1); if ($q) { $u = ($q.ToString().Trim() -split '\s+')[0].TrimStart('>') } }
+if (-not $u) { Write-Error 'Niemand ist am PC angemeldet – ohne angemeldeten Benutzer kann nichts auf dem Bildschirm geöffnet werden.'; exit 1 }
+$n = 'Hausgeist-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
+$a = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -WindowStyle Hidden -EncodedCommand ${inner}'
+$p = New-ScheduledTaskPrincipal -UserId $u -LogonType Interactive -RunLevel Limited
+Register-ScheduledTask -TaskName $n -Action $a -Principal $p -Force | Out-Null
+Start-ScheduledTask -TaskName $n
+Start-Sleep -Seconds 8
+Unregister-ScheduledTask -TaskName $n -Confirm:$false
+Write-Output "Auf dem Bildschirm von $u gestartet."`;
+}
+
 function clip(s: string, max = 6000): string {
   return s.length > max ? `${s.slice(0, max / 2)}\n… (${s.length - max} Zeichen gekürzt) …\n${s.slice(-max / 2)}` : s;
 }

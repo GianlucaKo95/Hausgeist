@@ -65,3 +65,13 @@ test("Discovery: ausgeschaltete Geräte ohne Netzwerkprüfung, eingerichtete wer
   assert.equal(r[0].configuredAs, "Laptop");
   assert.equal(r[0].ssh, false);
 });
+
+test("Bildschirm-Befehle laufen als Aufgabe in der Benutzersitzung", async () => {
+  const { desktopWrapper, encodePowerShell } = await import("../dist/adapters/pc.js");
+  const w = desktopWrapper('Start-Process "https://example.de"');
+  const assert = (await import("node:assert/strict")).default;
+  assert.match(w, /LogonType Interactive/);
+  assert.match(w, /Unregister-ScheduledTask/);
+  assert.ok(w.includes(encodePowerShell('Start-Process "https://example.de"')));
+  assert.ok(encodePowerShell(w).length < 30000);
+});

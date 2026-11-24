@@ -101,7 +101,10 @@ Programme installieren/aktualisieren mit winget, z. B.:
   winget install --id Mozilla.Firefox -e --silent --accept-source-agreements --accept-package-agreements
   winget upgrade --all --silent --accept-source-agreements --accept-package-agreements
 Programm-ID vorher ermitteln: winget search <Name> (ebenfalls als Befehl zur Freigabe).
+Alles, was der Benutzer SEHEN soll (Website öffnen, Programm starten, Datei anzeigen), mit on_desktop: true –
+sonst läuft es unsichtbar im Hintergrund. Website öffnen z. B.: Start-Process "https://www.example.de"
 Die Ausgabe holst du nach der Ausführung mit pc_command_result.`, {
+      on_desktop: z.boolean().default(false).describe("true = auf dem Bildschirm des angemeldeten Benutzers ausführen (Fenster, Browser)"),
       computer: z.string().optional().describe("Name des Computers, z. B. „Laptop“"),
       command: z.string().min(1).max(4000).describe("PowerShell-Befehl"),
       purpose: z.string().min(3).max(200).describe("Kurz und verständlich, wofür – wird dem Admin angezeigt"),
@@ -109,8 +112,9 @@ Die Ausgabe holst du nach der Ausführung mit pc_command_result.`, {
     }, safe(async (a) => {
       requireAdmin(ctx);
       const pc = ctx.pc.find(a.computer);
-      const summary = `${pc.name}: ${a.purpose}\n\n${a.command.length > 600 ? `${a.command.slice(0, 600)}…` : a.command}`;
-      const r = await ctx.actions.request("pc_command", { command: a.command, purpose: a.purpose, timeout_min: a.timeout_min, computer: pc.name },
+      if (a.on_desktop && a.command.length > 2000) throw new Error("Für on_desktop höchstens 2000 Zeichen");
+      const summary = `${pc.name}${a.on_desktop ? " (auf dem Bildschirm)" : ""}: ${a.purpose}\n\n${a.command.length > 600 ? `${a.command.slice(0, 600)}…` : a.command}`;
+      const r = await ctx.actions.request("pc_command", { command: a.command, purpose: a.purpose, timeout_min: a.timeout_min, computer: pc.name, on_desktop: a.on_desktop },
         { agent: "it", summary, requestedBy: ctx.user });
       return ok(`Zur Freigabe vorgelegt (${r.id}) für ${pc.name}. Läuft erst nach Klick des Admins.`);
     })),
