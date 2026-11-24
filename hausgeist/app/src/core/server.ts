@@ -104,7 +104,7 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
         res.end(CHAT_PAGE);
         return;
       }
-      if (path.endsWith("/api/health")) return json(res, 200, { ok: true, version: "0.12.2" });
+      if (path.endsWith("/api/health")) return json(res, 200, { ok: true, version: "0.12.3" });
 
       const user = await resolveUser(req);
       if (!user) return json(res, 401, { error: "Nicht angemeldet oder nicht als Haushaltsmitglied eingetragen." });
@@ -135,12 +135,14 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
         }
         if (!message && attachments.length === 0) return json(res, 400, { error: "message fehlt" });
         // Gesprächsverlauf: Nachricht ins gewünschte bzw. aktuelle Gespräch, Antwort ebenso.
-        const conv = await conversations.resolve(user.id, typeof body.conversation_id === "string" ? body.conversation_id : null);
+        const conv = await conversations.resolve(user.id, typeof body.conversation_id === "string" ? body.conversation_id : null,
+          () => master.takeLegacySession(user.id));
         const shown = [message, ...attachments.map((a) => `📎 ${a.name}`)].filter(Boolean).join("\n");
         await conversations.add(conv, "me", shown);
         const work = master.chat(user, message.slice(0, 8000), attachments, {
           id: conv.session_id,
           save: (sid) => conversations.setSession(conv, sid),
+          history: () => conversations.historyText(conv.id),
         }).then(
           async (reply) => { await conversations.add(conv, "ghost", reply).catch(() => undefined); return reply; },
           async (e) => { await conversations.add(conv, "error", e instanceof Error ? e.message : String(e)).catch(() => undefined); throw e; },

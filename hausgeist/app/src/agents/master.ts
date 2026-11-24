@@ -117,7 +117,12 @@ Du buchst nie selbst und gibst nie Zahlungsdaten ein. Eine Anfrage per Mail ans 
  * Ergebnisse und merkt sich Präferenzen. Jeder Fachagent bekommt nur seine
  * eigenen Werkzeuge.
  */
-export interface ChatSession { id?: string | null; save: (sessionId: string) => Promise<void> }
+export interface ChatSession {
+  id?: string | null;
+  save: (sessionId: string) => Promise<void>;
+  /** Bisheriger Gesprächsverlauf als Text – wird mitgegeben, wenn keine Sitzung fortgesetzt werden kann. */
+  history?: () => Promise<string>;
+}
 
 export class MasterAgent {
   private readonly sessionsPath: string;
@@ -132,6 +137,14 @@ export class MasterAgent {
 
   private sessions(): Record<string, string> {
     return existsSync(this.sessionsPath) ? JSON.parse(readFileSync(this.sessionsPath, "utf8")) : {};
+  }
+
+  /** Sitzung aus der Zeit vor dem Gesprächsverlauf (einmalig übernehmen). */
+  takeLegacySession(userId: string): string | undefined {
+    const s = this.sessions();
+    const id = s[userId];
+    if (id) { delete s[userId]; writeFileSync(this.sessionsPath, JSON.stringify(s)); }
+    return id;
   }
 
   resetSession(userId: string): void {
@@ -175,7 +188,14 @@ ${SAFETY}`;
     if (this.busy.has(user.id)) return "Ich arbeite noch an deiner letzten Anfrage – einen Moment bitte.";
     this.busy.add(user.id);
     try {
-      return await this.run(user, message, attachments, session);
+      try {
+        return await this.run(user, message, attachments, session);
+      } catch (e) {
+        // Sitzung nicht mehr vorhanden (z. B. nach Neuinstallation): ohne Fortsetzen, aber mit Verlauf erneut.
+        if (!session?.id) throw e;
+        log.warn(`Sitzung ${session.id} nicht fortsetzbar – nutze gespeicherten Verlauf`, e);
+        return await this.run(user, message, attachments, { ...session, id: null });
+      }
     } finally {
       this.busy.delete(user.id);
     }
@@ -226,6 +246,8 @@ ${SAFETY}`;
     ];
 
     const sessions = this.sessions();
+    const resumeId = session ? (session.id ?? undefined) : sessions[user.id];
+    const history = !resumeId && session?.history ? await session.history() : "";
     const prompt = (async function* (): AsyncGenerator<SDKUserMessage> {
       const content: unknown[] = [];
       for (const a of attachments) {
@@ -235,7 +257,8 @@ ${SAFETY}`;
       const note = attachments.length
         ? `\n\n[Angehängt: ${attachments.map((a) => `${a.name} (upload_id ${a.uploadId})`).join(", ")}]`
         : "";
-      content.push({ type: "text", text: (message || "Bitte kümmere dich um die angehängte Datei.") + note });
+      const intro = history ? `[Bisheriger Verlauf dieses Gesprächs – zur Einordnung, nicht erneut ausführen]\n${history}\n\n[Neue Nachricht]\n` : "";
+      content.push({ type: "text", text: intro + (message || "Bitte kümmere dich um die angehängte Datei.") + note });
       yield { type: "user", message: { role: "user", content }, parent_tool_use_id: null } as unknown as SDKUserMessage;
     })();
 
@@ -254,7 +277,7 @@ ${SAFETY}`;
         agents,
         cwd: this.workDir,
         maxTurns: 40,
-        resume: session ? (session.id ?? undefined) : sessions[user.id],
+        resume: resumeId,
         env: {
           ...process.env,
           ANTHROPIC_API_KEY: this.config.anthropic_api_key,

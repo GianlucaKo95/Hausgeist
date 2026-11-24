@@ -31,13 +31,14 @@ export class Conversations {
   }
 
   /** Gewünschtes Gespräch (falls es der Person gehört), sonst das aktuelle, sonst ein neues. */
-  async resolve(userId: string, requested?: string | null): Promise<Conversation> {
+  async resolve(userId: string, requested?: string | null, legacySession?: () => string | undefined): Promise<Conversation> {
     for (const id of [requested, this.current()[userId]]) {
       if (!id) continue;
       const c = await this.get(id, userId);
       if (c) { this.setCurrent(userId, c.id); return c; }
     }
-    const { data, error } = await db().from("conversations").insert({ user_id: userId }).select("id, user_id, title, session_id, updated_at").single();
+    // Erstes Gespräch nach dem Umstieg: laufende Sitzung von vorher übernehmen, damit nichts verloren geht.
+    const { data, error } = await db().from("conversations").insert({ user_id: userId, session_id: legacySession?.() ?? null }).select("id, user_id, title, session_id, updated_at").single();
     if (error) throw error;
     this.setCurrent(userId, data.id);
     return data as Conversation;
@@ -71,6 +72,14 @@ export class Conversations {
     return (data ?? [])
       .map((c) => ({ id: c.id, title: c.title, updated_at: c.updated_at, messages: (c.conversation_messages as unknown as { count: number }[])?.[0]?.count ?? 0, current: c.id === current }))
       .filter((c) => c.messages > 0);
+  }
+
+  /** Letzte Nachrichten als Text (für den Fall, dass die Agent-Sitzung nicht fortgesetzt werden kann). */
+  async historyText(convId: string, limit = 20): Promise<string> {
+    const { data } = await db().from("conversation_messages").select("sender, text, created_at")
+      .eq("conversation_id", convId).order("created_at", { ascending: false }).limit(limit + 1);
+    const rows = (data ?? []).reverse().slice(0, -1); // die gerade gesendete Nachricht weglassen
+    return rows.map((r) => `${r.sender === "me" ? "Person" : r.sender === "ghost" ? "Hausgeist" : "Fehler"}: ${String(r.text).slice(0, 2000)}`).join("\n");
   }
 
   async messages(id: string, userId: string) {
