@@ -155,6 +155,24 @@ function icloudFallback(config: Config, host?: string, user?: string): string | 
   return undefined;
 }
 
+/** IMAP-Fehler verständlich machen („Command failed“ sagt nichts). */
+export function explainImap(e: unknown, host: string): string {
+  const err = e as { message?: string; responseText?: string; authenticationFailed?: boolean; code?: string };
+  const detail = err.responseText || err.message || String(e);
+  const h = host.toLowerCase();
+  if (err.authenticationFailed || /AUTHENTICATIONFAILED|Invalid credentials|authentication failed|LOGIN failed|AUTHENTICATE failed/i.test(detail)) {
+    if (h.includes("gmail")) return "Gmail lehnt die Anmeldung ab. Gmail braucht ein App-Passwort: myaccount.google.com/apppasswords (dafür muss die Bestätigung in zwei Schritten aktiv sein). Als Benutzer die volle Gmail-Adresse.";
+    if (h.includes("yahoo")) return "Yahoo lehnt die Anmeldung ab. Yahoo braucht ein App-Passwort: login.yahoo.com → Kontosicherheit → App-Passwort erstellen. Als Benutzer die volle Yahoo-Adresse.";
+    if (h.includes("me.com")) return "iCloud lehnt die Anmeldung ab. Bitte ein app-spezifisches Passwort (account.apple.com) verwenden.";
+    if (h.includes("gmx") || h.includes("web.de")) return "Anmeldung abgelehnt. Bitte in den Postfach-Einstellungen „POP3/IMAP-Abruf“ einschalten und die volle E-Mail-Adresse als Benutzer verwenden.";
+    if (h.includes("office365") || h.includes("outlook")) return "Microsoft lehnt die Anmeldung mit Passwort ab (bei Outlook/Hotmail oft gar nicht mehr möglich).";
+    return `Anmeldung abgelehnt – Benutzer oder Passwort falsch (${detail}).`;
+  }
+  if (err.code === "ENOTFOUND") return `Server ${host} nicht gefunden – Adresse prüfen.`;
+  if (err.code === "ECONNREFUSED" || err.code === "ETIMEDOUT") return `Server ${host} nicht erreichbar – Port und SSL prüfen.`;
+  return `IMAP-Anmeldung fehlgeschlagen: ${detail}`;
+}
+
 async function imapTest(mb: { host: string; port: number; tls: boolean; user: string; password: string }): Promise<string[]> {
   const c = new ImapFlow({ host: mb.host, port: mb.port, secure: mb.tls, auth: { user: mb.user, pass: mb.password }, logger: false });
   await c.connect();
@@ -301,7 +319,7 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
       try {
         folders = await imapTest({ host: b.host, port: b.port, tls: b.tls, user: b.user, password });
       } catch (e) {
-        throw new HttpError(400, `IMAP-Anmeldung fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+        throw new HttpError(400, explainImap(e, b.host));
       }
       let smtp = "nicht eingerichtet";
       if (b.smtp_host) {

@@ -65,3 +65,10 @@ test("Mail-Ordner werden auch über Namen und Spam-Kennung gefunden", () => {
   assert.equal(resolveFolder(f, "Spam"), "Spamverdacht");
   assert.equal(resolveFolder(f, "Gibtsnicht"), undefined);
 });
+
+test("IMAP-Fehler werden je Anbieter erklärt", async () => {
+  const { explainImap } = await import("../dist/core/admin-api.js");
+  assert.match(explainImap({ message: "Command failed", authenticationFailed: true }, "imap.gmail.com"), /App-Passwort/);
+  assert.match(explainImap({ message: "Command failed", responseText: "Invalid credentials (Failure)" }, "imap.mail.yahoo.com"), /Yahoo/);
+  assert.match(explainImap({ code: "ENOTFOUND" }, "imap.gibtsnicht.de"), /nicht gefunden/);
+});

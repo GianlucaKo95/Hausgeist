@@ -10,7 +10,7 @@ struct MailProvider: Identifiable, Hashable {
 
     static let all: [MailProvider] = [
         MailProvider(name: "Gmail", imap: "imap.gmail.com", smtp: "smtp.gmail.com", smtpPort: 587,
-                     hint: "Braucht ein App-Passwort (Google-Konto → Sicherheit → App-Passwörter)."),
+                     hint: "Braucht ein App-Passwort: myaccount.google.com/apppasswords (Bestätigung in zwei Schritten muss aktiv sein). Benutzer = volle Gmail-Adresse."),
         MailProvider(name: "iCloud", imap: "imap.mail.me.com", smtp: "smtp.mail.me.com", smtpPort: 587,
                      hint: "Braucht ein app-spezifisches Passwort (account.apple.com)."),
         MailProvider(name: "GMX", imap: "imap.gmx.net", smtp: "mail.gmx.net", smtpPort: 587,
@@ -21,6 +21,14 @@ struct MailProvider: Identifiable, Hashable {
         MailProvider(name: "Strato", imap: "imap.strato.de", smtp: "smtp.strato.de", smtpPort: 465, hint: nil),
         MailProvider(name: "T-Online", imap: "secureimap.t-online.de", smtp: "securesmtp.t-online.de", smtpPort: 465,
                      hint: "Braucht das E-Mail-Passwort aus dem Kundencenter."),
+        MailProvider(name: "Yahoo", imap: "imap.mail.yahoo.com", smtp: "smtp.mail.yahoo.com", smtpPort: 465,
+                     hint: "Braucht ein App-Passwort (Yahoo-Konto → Kontosicherheit → App-Passwort erstellen)."),
+        MailProvider(name: "AOL", imap: "imap.aol.com", smtp: "smtp.aol.com", smtpPort: 465,
+                     hint: "Braucht ein App-Passwort (AOL-Konto → Kontosicherheit)."),
+        MailProvider(name: "freenet", imap: "mx.freenet.de", smtp: "mx.freenet.de", smtpPort: 587,
+                     hint: "IMAP muss im freenet-Postfach freigeschaltet sein."),
+        MailProvider(name: "Posteo", imap: "posteo.de", smtp: "posteo.de", smtpPort: 587, hint: nil),
+        MailProvider(name: "mailbox.org", imap: "imap.mailbox.org", smtp: "smtp.mailbox.org", smtpPort: 587, hint: nil),
         MailProvider(name: "Outlook / Hotmail", imap: "outlook.office365.com", smtp: "smtp.office365.com", smtpPort: 587,
                      hint: "Microsoft erlaubt die Anmeldung mit Passwort teils nicht mehr – dann klappt der Test nicht."),
     ]
