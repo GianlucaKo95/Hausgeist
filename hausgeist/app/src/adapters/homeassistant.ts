@@ -149,7 +149,9 @@ export class HomeAssistant {
   onNotificationAction(handler: (action: string, haUserId: string | null) => void): void {
     let retry = 1000;
     let rejected = 0;
+    let stopped = false;
     const connect = () => {
+      if (stopped) return;
       const ws = new WebSocket(this.config.haWsUrl);
       let nextId = 1;
       ws.on("message", (raw) => {
@@ -166,10 +168,11 @@ export class HomeAssistant {
           rejected++;
           log.error(`Home Assistant hat das Token abgelehnt (${rejected}. Mal)`);
           if (rejected >= 3) {
-            // Das Token vergibt der Supervisor beim Start des Add-ons. Ist es dauerhaft ungültig
-            // (z. B. nach einem Supervisor-Update), hilft nur ein Neustart – den übernimmt der Watchdog.
-            log.error("Token bleibt ungültig – starte neu, um ein frisches Token zu erhalten");
-            setTimeout(() => process.exit(1), 500);
+            // Nicht neu starten (das ergäbe eine Endlosschleife) – der Hausgeist läuft weiter,
+            // nur Klicks in Home-Assistant-Benachrichtigungen kommen dann nicht an.
+            log.error(`Token bleibt ungültig (Token ${this.config.supervisorToken ? "vorhanden" : "FEHLT"}) – Freigaben gehen weiter über die App`);
+            stopped = true;
+            ws.close();
           }
         } else if (msg.type === "event") {
           const ev = msg.event;
@@ -177,6 +180,7 @@ export class HomeAssistant {
         }
       });
       ws.on("close", () => {
+        if (stopped) return;
         log.warn(`Verbindung getrennt, neuer Versuch in ${retry / 1000}s`);
         setTimeout(connect, retry);
         retry = Math.min(retry * 2, 60_000);

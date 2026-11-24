@@ -128,12 +128,28 @@ export function readAppSettings(dataDir: string): AppSettings {
   return parsed.success ? parsed.data : {};
 }
 
+/**
+ * Supervisor-Token: steht in der Umgebung – bei s6-overlay-Images aber teils nur
+ * in /run/s6/container_environment, wenn der Prozess nicht mit with-contenv startet.
+ */
+export function readSupervisorToken(): string | undefined {
+  const fromEnv = process.env.SUPERVISOR_TOKEN || process.env.HASSIO_TOKEN;
+  if (fromEnv) return fromEnv.trim();
+  for (const f of ["/run/s6/container_environment/SUPERVISOR_TOKEN", "/var/run/s6/container_environment/SUPERVISOR_TOKEN"]) {
+    try {
+      const t = readFileSync(f, "utf8").trim();
+      if (t) return t;
+    } catch { /* nicht vorhanden */ }
+  }
+  return undefined;
+}
+
 /** Liest /data/options.json (Home-Assistant-Add-on) oder für lokale Tests HAUSGEIST_OPTIONS. */
 export function loadConfig(): Config {
   const path = process.env.HAUSGEIST_OPTIONS ?? "/data/options.json";
   if (!existsSync(path)) throw new Error(`Konfiguration nicht gefunden: ${path}`);
   const options = Options.parse(JSON.parse(readFileSync(path, "utf8")));
-  const supervisorToken = process.env.SUPERVISOR_TOKEN;
+  const supervisorToken = readSupervisorToken();
   const dataDir = process.env.HAUSGEIST_DATA ?? "/data";
   // In der App gepflegte Einstellungen (inkl. Passwörter) liegen nur auf dem Pi
   // in /data/settings.json und haben Vorrang vor der Add-on-Konfiguration.

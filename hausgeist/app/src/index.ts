@@ -41,7 +41,11 @@ async function main() {
     await new Promise((r) => setTimeout(r, 30_000));
   }
 
+  if (!config.supervisorToken) log.error("Kein Supervisor-Token gefunden – Home Assistant ist nicht erreichbar (homeassistant_api in config.yaml prüfen)");
   const ha = new HomeAssistant(config);
+  fetch(`${config.haBaseUrl}/`, { headers: { Authorization: `Bearer ${config.supervisorToken}` } })
+    .then((r) => r.ok ? log.info("Home Assistant erreichbar") : log.error(`Home Assistant lehnt ab: HTTP ${r.status}`))
+    .catch((e) => log.error("Home Assistant nicht erreichbar", e));
   const apns = new ApnsClient(config);
   if (apns.enabled) {
     enableAppPush(true);
