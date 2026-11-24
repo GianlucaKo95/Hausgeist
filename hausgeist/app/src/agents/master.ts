@@ -1,3 +1,4 @@
+import { itTools } from "../tools/it.js";
 import { query, createSdkMcpServer, type AgentDefinition, type SDKUserMessage, type SdkMcpToolDefinition } from "@anthropic-ai/claude-agent-sdk";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -87,6 +88,15 @@ Erinnerungen zu einem Zeitpunkt („morgen um 8“, „jeden Montag“) legst du
     prompt: `Du bist der Business-Agent für eigene Projekte und die KoeVen GbR. Du arbeitest nur mit dem Geschäftspostfach und GitHub.
 Keine Daten oder Mails des Arbeitgebers. Senden geht nur über request_send_mail.`,
     server: "business",
+  },
+  it: {
+    description: "Netzwerk und Computer (nur Admin): FRITZ!Box (Status, Geräte im WLAN, Gast-WLAN, Anrufliste, Neustart) und Windows-PC (einschalten, Programme installieren/aktualisieren, Befehle ausführen – jeder Befehl nur nach Freigabe).",
+    prompt: `Du bist der IT-Agent. Du kümmerst dich um die FRITZ!Box und den Windows-PC des Admins.
+FRITZ!Box: Status, Geräte, Gast-WLAN (auch QR-Text), Anrufliste darfst du direkt abfragen; Gast-WLAN ein/aus direkt; Neustart nur über request_fritz_reboot.
+PC: Prüfe mit pc_online, ob er an ist; wenn nicht, biete pc_wake an (nur nach Zustimmung im Gespräch). Jeder Befehl am PC läuft ausschließlich über request_pc_command und erst nach Freigabe.
+Halte Befehle so klein und eindeutig wie möglich, nutze winget mit --id und -e, nie Skripte aus dem Internet herunterladen und ausführen (kein iex/Invoke-Expression mit Web-Inhalten), keine Sicherheitsfunktionen abschalten (Defender, Firewall, UAC), keine Benutzer oder Kennwörter ändern, nichts löschen außer auf ausdrücklichen Wunsch.
+Erkläre in purpose für Laien, was der Befehl tut. Nach der Freigabe holst du das Ergebnis mit pc_command_result und fasst es verständlich zusammen.`,
+    server: "it",
   },
   research: {
     description: "Recherche und Reisen: Internet- und Marktrecherche, Fotos erkennen (Ort, Hotel, Produkt), Bildersuche, Hotels/Reisen finden und Preise vergleichen, Buchung zur Freigabe vorlegen, Entscheidungsvorlagen.",
@@ -185,6 +195,7 @@ ${SAFETY}`;
       business: as([...mailTools(ctx, "business", "business"), ...githubTools(ctx)]),
       research: as([...researchTools(ctx), viewUploadTool(ctx), reverseImageSearchTool(ctx), bookingTool(ctx)]),
       master: as([...memoryTools(ctx), ...noteTools(ctx)]),
+      ...(user.role === "admin" ? { it: as(itTools(ctx)) } : {}),
     };
     // Kinder bekommen die übrigen Werkzeuge gar nicht erst zu sehen.
     const toolsets = user.role === "child"
@@ -199,6 +210,7 @@ ${SAFETY}`;
     const agents: Record<string, AgentDefinition> = {};
     for (const [key, def] of Object.entries(SUBAGENTS)) {
       if (user.role === "child" && !childAllowed.has(key)) continue;
+      if (!toolsets[def.server]) continue; // z. B. IT-Agent nur für den Admin
       agents[key] = {
         description: def.description,
         prompt: `${def.prompt}\n\nDu arbeitest für ${user.name} (${user.role}).\n\n${SAFETY}`,

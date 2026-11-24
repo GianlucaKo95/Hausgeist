@@ -18,6 +18,7 @@ struct AdminSection: View {
                     NavigationLink { AccountsView() } label: { Label("Konten & Empfänger", systemImage: "eurosign.bank.building") }
                     NavigationLink { SmartHomeView() } label: { Label("Smart Home", systemImage: "house") }
                     NavigationLink { BringView() } label: { Label("Einkaufslisten (Bring!)", systemImage: "cart") }
+                    NavigationLink { NetworkPcView() } label: { Label("Netzwerk & PC", systemImage: "desktopcomputer") }
                     NavigationLink { RoutinesView() } label: { Label("Routinen & Ablage", systemImage: "clock.arrow.circlepath") }
                 }
             } header: {

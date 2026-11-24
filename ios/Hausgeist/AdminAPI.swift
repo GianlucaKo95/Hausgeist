@@ -58,7 +58,15 @@ struct AdminSettings: Codable {
     var fints_product_id: String?
     var banks: [BankLogin]?
     var bring_lists: [BringListConfig]?
+    var fritzbox: FritzInfo?
+    var pc: PcConfig?
+    var pc_public_key: String?
 }
+
+struct FritzInfo: Codable, Hashable { var host: String; var user: String; var password_set: Bool }
+struct FritzSave: Encodable { var host: String; var user: String; var password: String? }
+struct PcConfig: Codable, Hashable { var name: String; var host: String; var port: Int; var user: String; var mac: String }
+struct TestResult: Decodable { let ok: Bool; let message: String?; let model: String?; let firmware: String?; let devices: Int? }
 
 struct BankLogin: Codable, Identifiable, Hashable {
     var id: String { bank }
@@ -102,6 +110,8 @@ struct SettingsPatch: Encodable {
     var payment_mode: String?
     var fints_product_id: String?
     var bring_lists: [BringListConfig]?
+    var fritzbox: FritzSave?
+    var pc: PcConfig?
 }
 
 struct Mailbox: Codable, Identifiable, Hashable {
@@ -258,6 +268,21 @@ extension APIClient {
         return try await request("api/admin/banks/\(bank)/test", method: "POST", body: b)
     }
 
+    func testFritz() async throws -> TestResult {
+        if AppConfig.isDemo { return TestResult(ok: true, message: nil, model: "FRITZ!Box 7590 AX", firmware: "8.02", devices: 23) }
+        return try await request("api/admin/fritzbox/test", method: "POST", body: [String: String]())
+    }
+
+    func testPc() async throws -> TestResult {
+        if AppConfig.isDemo { return TestResult(ok: true, message: "luca-pc\\luca\nLUCA-PC\nMicrosoft Windows 11 Pro", model: nil, firmware: nil, devices: nil) }
+        return try await request("api/admin/pc/test", method: "POST", body: [String: String]())
+    }
+
+    func forgetPcHost() async throws {
+        if AppConfig.isDemo { return }
+        let _: OK = try await request("api/admin/pc/forget-host", method: "POST", body: [String: String]())
+    }
+
     func mailboxes() async throws -> [Mailbox] {
         if AppConfig.isDemo { return DemoAdmin.mailboxes }
         return try await request("api/admin/mailboxes")
@@ -374,5 +399,8 @@ enum DemoAdmin {
             BankLogin(bank: "deutsche_bank", name: "Deutsche Bank", default_url: "https://fints.deutsche-bank.de/", login: "", url: "", pin_set: false),
             BankLogin(bank: "dkb", name: "DKB", default_url: "https://fints.dkb.de/fints", login: "", url: "", pin_set: false),
         ],
-        bring_lists: [BringListConfig(name: "Zuhause", entity_id: "todo.zuhause", stores: ["Rewe", "Aldi", "dm"], default: true)])
+        bring_lists: [BringListConfig(name: "Zuhause", entity_id: "todo.zuhause", stores: ["Rewe", "Aldi", "dm"], default: true)],
+        fritzbox: FritzInfo(host: "fritz.box", user: "hausgeist", password_set: true),
+        pc: PcConfig(name: "Luca-PC", host: "192.168.178.20", port: 22, user: "luca", mac: "AA:BB:CC:DD:EE:FF"),
+        pc_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDemoSchluesselNurFuerDieVorschau hausgeist")
 }

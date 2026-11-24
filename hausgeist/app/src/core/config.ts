@@ -32,6 +32,19 @@ const BankLogins = z.object({
   dkb: BankLogin.optional(),
 });
 
+const FritzBoxCfg = z.object({
+  host: z.string().default("fritz.box"),
+  user: z.string().default(""),
+  password: z.string().default(""),
+});
+const PcCfg = z.object({
+  name: z.string().default("PC"),
+  host: z.string().default(""),
+  port: z.number().int().min(1).max(65535).default(22),
+  user: z.string().default(""),
+  mac: z.string().default(""),
+});
+
 const BringList = z.object({
   name: z.string().min(1),
   entity_id: z.string().regex(/^todo\.[a-z0-9_]+$/, "entity_id muss mit todo. beginnen"),
@@ -67,6 +80,8 @@ export const Options = z.object({
   evening_check: z.string().regex(/^(([01]\d|2[0-3]):[0-5]\d)?$/, "evening_check im Format HH:MM").default("18:00"),
   ha_entities: z.array(z.string()).default([]),
   bring_lists: z.array(BringList).default([]),
+  fritzbox: FritzBoxCfg.prefault({}),
+  pc: PcCfg.prefault({}),
   energy: Energy.default({}),
   github_token: z.string().default(""),
   serpapi_key: z.string().default(""),
@@ -106,6 +121,8 @@ export const AppSettings = z.object({
   ha_calendars: z.array(HaCalendar),
   ha_entities: z.array(z.string()),
   bring_lists: z.array(BringList),
+  fritzbox: FritzBoxCfg,
+  pc: PcCfg,
   energy: Energy,
   daily_brief: time,
   evening_check: time,

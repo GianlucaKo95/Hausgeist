@@ -92,7 +92,7 @@ export function duplicateKey(inv: {
   return `amt:${normalizeIban(inv.iban)}:${inv.amount_cents}:${inv.invoice_date ?? "?"}`;
 }
 
-export type ActionKind = "send_mail" | "order" | "ha_service" | "calendar_event" | "booking";
+export type ActionKind = "send_mail" | "order" | "ha_service" | "calendar_event" | "booking" | "pc_command" | "fritz_reboot";
 
 /**
  * Freigaberechte für Stufe-2-Aktionen außer Zahlungen.
@@ -106,6 +106,8 @@ export function canApproveAction(
   action: { kind: ActionKind; amount_cents: number | null; mailbox_owner_id?: string | null },
 ): ApprovalDecision {
   if (user.role === "child") return { allowed: false, reason: "Kinder können keine Aktionen freigeben." };
+  if ((action.kind === "pc_command" || action.kind === "fritz_reboot") && user.role !== "admin")
+    return { allowed: false, reason: "Befehle am PC und an der FRITZ!Box kann nur der Admin freigeben." };
   if ((action.kind === "order" || action.kind === "booking") && user.role === "adult" && (action.amount_cents ?? 0) > user.approval_limit_cents)
     return { allowed: false, reason: `Bestellung über deinem Limit von ${formatEuro(user.approval_limit_cents)} – nur der Admin kann freigeben.` };
   if (action.kind === "send_mail" && user.role !== "admin" && action.mailbox_owner_id && action.mailbox_owner_id !== user.id)

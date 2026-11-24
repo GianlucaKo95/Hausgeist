@@ -1,3 +1,5 @@
+import type { WindowsPc } from "../adapters/pc.js";
+import type { FritzBox } from "../adapters/fritzbox.js";
 import { db, audit, listUsers } from "./db.js";
 import { canApproveAction, formatEuro, type ActionKind, type AppUser } from "./checks.js";
 import type { Config } from "./config.js";
@@ -56,17 +58,23 @@ type Payloads = {
   order: OrderPayload;
   ha_service: HaServicePayload;
   calendar_event: CalendarPayload;
+  pc_command: PcCommandPayload;
+  fritz_reboot: Record<string, never>;
 };
 
 /**
  * Stufe-2-Aktionen: Agenten dürfen sie nur beantragen. Ausgeführt wird erst
  * nach Freigabe, mit genau dem eingefrorenen Payload, durch festen Code.
  */
+export interface PcCommandPayload { command: string; purpose: string; timeout_min?: number }
+
 export class ActionService {
   constructor(
     private readonly config: Config,
     private readonly ha: HomeAssistant,
     private readonly calendar: AppleCalendar,
+    private readonly pc?: WindowsPc,
+    private readonly fritz?: FritzBox,
   ) {}
 
   private async mailboxOwner(name: string): Promise<string | null> {
@@ -93,7 +101,7 @@ export class ActionService {
     const approvers = users.filter(
       (u) => u.notify_service && canApproveAction(u, { kind, amount_cents: amount, mailbox_owner_id: owner }).allowed,
     );
-    const title = { send_mail: "Mail senden?", order: "Bestellen?", ha_service: "Gerät schalten?", calendar_event: "Termin eintragen?", booking: "Buchen?" }[kind];
+    const title = { send_mail: "Mail senden?", order: "Bestellen?", ha_service: "Gerät schalten?", calendar_event: "Termin eintragen?", booking: "Buchen?", pc_command: "Befehl am PC ausführen?", fritz_reboot: "FRITZ!Box neu starten?" }[kind];
     const requester = meta.requestedBy ? `\nAngefragt von ${meta.requestedBy.name}` : "";
     for (const u of approvers) {
       await this.ha.notify(u.notify_service!, title, `${meta.summary}${requester}`, [
@@ -199,6 +207,20 @@ export class ActionService {
         const p = payload as unknown as CalendarPayload;
         await this.calendar.createEvent(p.calendar, p);
         return `Termin „${p.title}“ in ${p.calendar} eingetragen`;
+      }
+      case "pc_command": {
+        // Genau der freigegebene Befehl – nichts anderes.
+        const p = payload as unknown as PcCommandPayload;
+        if (!this.pc) throw new Error("PC-Anbindung fehlt");
+        if (!(await this.pc.online())) throw new Error(`${this.config.pc.name} ist aus oder nicht erreichbar.`);
+        const r = await this.pc.run(p.command, Math.min(p.timeout_min ?? 10, 60) * 60_000);
+        const out = [r.stdout, r.stderr && `Fehlerausgabe:\n${r.stderr}`].filter(Boolean).join("\n\n") || "(keine Ausgabe)";
+        return `${p.purpose} – Rückgabewert ${r.code ?? "?"}\n${out}`;
+      }
+      case "fritz_reboot": {
+        if (!this.fritz) throw new Error("FRITZ!Box-Anbindung fehlt");
+        await this.fritz.reboot();
+        return "FRITZ!Box startet neu – Internet und WLAN sind ein paar Minuten weg.";
       }
     }
   }

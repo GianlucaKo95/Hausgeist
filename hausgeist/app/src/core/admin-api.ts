@@ -5,6 +5,8 @@ import { ImapFlow } from "imapflow";
 import nodemailer from "nodemailer";
 import { z } from "zod";
 import { BANKS, type BankKey, type Config, type MailboxConfig } from "./config.js";
+import type { FritzBox } from "../adapters/fritzbox.js";
+import type { WindowsPc } from "../adapters/pc.js";
 import { BANK_INFO, blzFromIban, type FinTSProvider } from "../adapters/payment.js";
 import type { SettingsStore } from "./settings.js";
 import { isValidIban, normalizeIban, type AppUser } from "./checks.js";
@@ -20,6 +22,8 @@ export interface AdminDeps {
   settings: SettingsStore;
   ha: HomeAssistant;
   fints: FinTSProvider;
+  fritz: FritzBox;
+  pc: WindowsPc;
   json: Json;
   readBody: ReadBody;
 }
@@ -34,6 +38,18 @@ const requireAdult = (u: AppUser) => { if (u.role === "child") throw new HttpErr
 const time = z.string().regex(/^(([01]\d|2[0-3]):[0-5]\d)?$/, "Uhrzeit im Format HH:MM");
 
 const SettingsBody = z.object({
+  fritzbox: z.object({
+    host: z.string().trim().min(1).max(100).default("fritz.box"),
+    user: z.string().trim().max(60).default(""),
+    password: z.string().max(100).optional(),
+  }).optional(),
+  pc: z.object({
+    name: z.string().trim().min(1).max(40).default("PC"),
+    host: z.string().trim().max(100).default(""),
+    port: z.number().int().min(1).max(65535).default(22),
+    user: z.string().trim().max(60).default(""),
+    mac: z.string().trim().regex(/^$|^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$/, "MAC-Adresse im Format AA:BB:CC:DD:EE:FF").default(""),
+  }).optional(),
   icloud_user: z.string().optional(),
   icloud_app_password: z.string().optional(),
   calendars: z.array(z.object({ name: z.string().min(1), owner: z.string().min(1) })).optional(),
@@ -158,6 +174,8 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
         paperless_url: config.paperless_url, paperless_token_set: Boolean(config.paperless_token),
         push_enabled: Boolean(config.apns_key_id && config.apns_key),
         payment_mode: config.payment_mode, fints_product_id: config.fints_product_id,
+        fritzbox: { host: config.fritzbox.host, user: config.fritzbox.user, password_set: Boolean(config.fritzbox.password) },
+        pc: config.pc, pc_public_key: d.pc.keyPair().publicKey,
         banks: BANKS.map((b) => ({
           bank: b, name: BANK_INFO[b].name, default_url: BANK_INFO[b].url,
           login: config.bank_logins[b]?.login ?? "", url: config.bank_logins[b]?.url ?? "",
@@ -172,12 +190,15 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
       // Leere Passwortfelder bedeuten „unverändert lassen“.
       if (body.icloud_app_password === "") delete body.icloud_app_password;
       if (body.paperless_token === "") delete body.paperless_token;
+      const fritzbox = body.fritzbox ? { ...body.fritzbox, password: body.fritzbox.password || config.fritzbox.password } : undefined;
+      if (body.pc?.mac) body.pc.mac = body.pc.mac.replace(/-/g, ":").toUpperCase();
       if (body.payment_mode === "fints") {
         const productId = body.fints_product_id ?? config.fints_product_id;
         if (!productId.trim()) throw new HttpError(400, "Für echte Überweisungen zuerst die FinTS-Produkt-ID eintragen.");
         if (!BANKS.some((b) => config.bank_logins[b])) throw new HttpError(400, "Für echte Überweisungen zuerst einen Bankzugang hinterlegen.");
       }
-      await d.settings.update(body);
+      const { fritzbox: _f, ...rest } = body;
+      await d.settings.update(fritzbox ? { ...rest, fritzbox } : rest);
       await audit({ agent: "admin", action: "settings", level: 1, result: Object.keys(body).join(","), user_id: user.id });
       json(res, 200, { ok: true });
       return true;
@@ -427,6 +448,41 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
       } finally {
         config.fints_product_id = productBefore;
       }
+      return true;
+    }
+
+    // ── Netzwerk & PC ──────────────────────────────────────────────────
+    if (route === "fritzbox/test" && method === "POST") {
+      requireAdmin(user);
+      d.fritz.reset();
+      try {
+        json(res, 200, { ok: true, ...(await d.fritz.info()), devices: (await d.fritz.hosts(true)).length });
+      } catch (e) {
+        throw new HttpError(400, e instanceof Error ? e.message : String(e));
+      }
+      return true;
+    }
+    if (route === "pc/test" && method === "POST") {
+      requireAdmin(user);
+      if (!d.pc.enabled) throw new HttpError(400, "Bitte zuerst Adresse und Benutzer des PCs eintragen.");
+      if (!(await d.pc.online())) {
+        json(res, 200, { ok: false, online: false, message: `${config.pc.name} ist aus oder SSH ist nicht erreichbar (Port ${config.pc.port}).` });
+        return true;
+      }
+      try {
+        // Fester, harmloser Befehl für den Verbindungstest
+        const r = await d.pc.run("whoami; hostname; (Get-CimInstance Win32_OperatingSystem).Caption", 30_000);
+        json(res, 200, { ok: true, online: true, message: r.stdout || r.stderr });
+      } catch (e) {
+        json(res, 200, { ok: false, online: true, message: e instanceof Error ? e.message : String(e) });
+      }
+      return true;
+    }
+    if (route === "pc/forget-host" && method === "POST") {
+      requireAdmin(user);
+      d.pc.forgetHost();
+      await audit({ agent: "admin", action: "pc_forget_host", level: 1, result: "ok", user_id: user.id });
+      json(res, 200, { ok: true });
       return true;
     }
 

@@ -1,3 +1,5 @@
+import { FritzBox } from "./adapters/fritzbox.js";
+import { WindowsPc } from "./adapters/pc.js";
 import { ShoppingList } from "./core/shopping-list.js";
 import { loadConfig } from "./core/config.js";
 import { db, enableAppPush } from "./core/db.js";
@@ -54,7 +56,10 @@ async function main() {
   }
   const apple = new AppleCalendar(config);
   const paperless = new Paperless(config);
-  const actions = new ActionService(config, ha, apple);
+  const fritz = new FritzBox(config);
+  const pc = new WindowsPc(config);
+  pc.keyPair(); // Schlüssel beim ersten Start erzeugen, damit die App ihn anzeigen kann
+  const actions = new ActionService(config, ha, apple, pc, fritz);
   const calendar = new CalendarHub(config, apple, ha);
 
   // Posteingang: Mails und Uploads → Rechnung, Vertrag, Termin oder Ablage
@@ -68,7 +73,7 @@ async function main() {
 
   // Master-Agent mit acht Fachagenten (auf Anfrage) und Routinen (zeitgesteuert)
   const shopping = new ShoppingList(config, ha);
-  const base = { config, ha, calendar, paperless, actions, finance, intake, shopping };
+  const base = { config, ha, calendar, paperless, actions, finance, intake, shopping, fritz, pc };
   const master = new MasterAgent(config, base);
   const routines = new Routines(config, ha, base, fints);
 
@@ -84,8 +89,9 @@ async function main() {
   settings.onChange(async (changed) => {
     if (changed.includes("mailboxes")) await communication.restart();
     if (changed.includes("icloud_user") || changed.includes("icloud_app_password")) apple.reset();
+    if (changed.includes("fritzbox")) fritz.reset();
   });
-  startServer(config, master, finance, actions, ha, settings, fints);
+  startServer(config, master, finance, actions, ha, settings, fints, { fritz, pc });
   routines.start();
 
   log.info(`Hausgeist läuft (Zahlungsmodus: ${payments.name})`);

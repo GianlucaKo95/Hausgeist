@@ -88,7 +88,8 @@ struct ApprovalsView: View {
     private func actionRow(_ a: ActionApproval) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Label(kindTitle(a.kind), systemImage: kindIcon(a.kind)).font(.headline)
-            Text(a.summary).font(.subheadline).foregroundStyle(.secondary)
+            Text(a.summary).font(a.kind == "pc_command" ? .caption.monospaced() : .subheadline).foregroundStyle(.secondary)
+                .textSelection(.enabled)
             decisionButtons(enabled: a.can_decide, id: a.id,
                             approve: { pendingAction = a },
                             reject: { Task { await decide(action: a, approve: false) } })
@@ -131,6 +132,9 @@ struct ApprovalsView: View {
         case "order": return "Bestellung"
         case "ha_service": return "Gerät schalten"
         case "calendar_event": return "Termin eintragen"
+        case "booking": return "Buchung"
+        case "pc_command": return "Befehl am PC"
+        case "fritz_reboot": return "FRITZ!Box neu starten"
         default: return k
         }
     }
@@ -141,6 +145,9 @@ struct ApprovalsView: View {
         case "order": return "cart"
         case "ha_service": return "lock.shield"
         case "calendar_event": return "calendar"
+        case "booking": return "bed.double"
+        case "pc_command": return "desktopcomputer"
+        case "fritz_reboot": return "wifi.router"
         default: return "questionmark.circle"
         }
     }

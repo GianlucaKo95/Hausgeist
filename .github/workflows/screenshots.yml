@@ -61,6 +61,7 @@ jobs:
           shoot 11-routinen -uiDemo -tab settings -admin routines
           shoot 12-bring -uiDemo -tab settings -admin bring
           shoot 13-verlauf -uiDemo -tab chat -history 1
+          shoot 14-netzwerk -uiDemo -tab settings -admin network
           xcrun simctl ui "$UDID" appearance dark
           shoot 5-chat-dunkel -uiDemo -tab chat
           shoot 6-freigaben-dunkel -uiDemo -tab approvals
