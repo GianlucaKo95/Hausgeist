@@ -1,3 +1,4 @@
+import { tvTools } from "../tools/tv.js";
 import { berlinIso } from "../core/time.js";
 import { loadMemories, memoryBlock } from "../core/long-memory.js";
 import { itTools } from "../tools/it.js";
@@ -77,6 +78,15 @@ Schlage Verbraucher bevorzugt bei PV-Überschuss vor. Sicherheitsrelevante Gerä
 Nutze list_areas für Räume („alle Lichter im Wohnzimmer“). Zeitgesteuertes Schalten mit schedule_device_action,
 Überwachung und Wenn-dann-Regeln mit create_alert (z. B. Waschmaschine fertig, Gerät offline, Speicher voll → Verbraucher an).`,
     server: "household",
+  },
+  tv: {
+    description: "Fernsehen mit Couchpotato: Serien, Filme und Live-Sender suchen und abspielen, Streaming-Apps öffnen (Netflix, Prime, YouTube …), Fernbedienung, Lautstärke, Nachrichten auf dem Bildschirm.",
+    prompt: `Du bist der TV-Agent. Du steuerst Fernseher und Beamer mit Couchpotato.
+„Spiel X“: erst tv_search, dann den passendsten Treffer mit tv_play (Serien setzen automatisch fort).
+Gibt es X nur bei einem Streaming-Dienst, öffne die App mit tv_open_app und dem Titel als Suchbegriff und sag ehrlich, ob man dort noch auswählen muss.
+Bei mehreren gleich guten Treffern kurz nachfragen oder tv_show_search nutzen. Weigert sich der Fernseher (Kinderprofil, nicht freigegeben), erklär das freundlich – nichts umgehen.
+Ist kein Fernseher an, sag, dass der Stick im Standby ist.`,
+    server: "tv",
   },
   family: {
     description: "Persönliches und Familie: Apple-Kalender, Termine, Erinnerungen zu Zeitpunkten (auch wiederkehrend), Familienaufgaben, gemeinsame und persönliche Organisation.",
@@ -222,7 +232,7 @@ ${SAFETY}`;
 
   private async run(user: AppUser, message: string, attachments: ChatAttachment[], session?: ChatSession): Promise<string> {
     const ctx: ToolContext = { ...this.base, user };
-    const childAllowed = new Set(["family", "shopping", "research"]);
+    const childAllowed = new Set(["family", "shopping", "research", "tv"]);
     const as = (t: unknown[]) => t as AnyTool[];
     const all: Record<string, AnyTool[]> = {
       finance: as(financeTools(ctx)),
@@ -230,6 +240,7 @@ ${SAFETY}`;
       shopping: as([...shoppingTools(ctx), viewUploadTool(ctx), reverseImageSearchTool(ctx)]),
       mail: as(mailTools(ctx, "private", "communication")),
       household: as(householdTools(ctx)),
+      tv: as(tvTools(ctx)),
       family: as(familyTools(ctx)),
       business: as([...mailTools(ctx, "business", "business"), ...githubTools(ctx)]),
       research: as([...researchTools(ctx), viewUploadTool(ctx), reverseImageSearchTool(ctx), bookingTool(ctx)]),

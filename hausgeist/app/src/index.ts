@@ -2,6 +2,7 @@ import { FritzBox } from "./adapters/fritzbox.js";
 import { WindowsPc } from "./adapters/pc.js";
 import { Positions } from "./core/location.js";
 import { BringClient } from "./adapters/bring.js";
+import { TvHub } from "./core/tv-hub.js";
 import { detectFromHa } from "./core/energy-detect.js";
 import { ShoppingList } from "./core/shopping-list.js";
 import { loadConfig } from "./core/config.js";
@@ -78,9 +79,10 @@ async function main() {
   const bring = new BringClient(config);
   const shopping = new ShoppingList(config, ha, bring);
   const positions = new Positions(config.dataDir);
+  const tv = new TvHub(config.dataDir);
   let settingsRef: SettingsStore | undefined;
   const saveSettings = async (patch: Record<string, unknown>) => { await settingsRef?.update(patch); };
-  const base = { config, ha, calendar, paperless, actions, finance, intake, shopping, fritz, pc, positions, saveSettings };
+  const base = { config, ha, calendar, paperless, actions, finance, intake, shopping, fritz, pc, positions, tv, saveSettings };
   const master = new MasterAgent(config, base);
   const routines = new Routines(config, ha, base, fints);
 
@@ -108,7 +110,7 @@ async function main() {
     if (changed.includes("fritzbox")) fritz.reset();
     if (changed.includes("bring")) bring.reset();
   });
-  startServer(config, master, finance, actions, ha, settings, fints, { fritz, pc, positions, bring });
+  startServer(config, master, finance, actions, ha, settings, fints, { fritz, pc, positions, bring, tv });
   routines.start();
 
   log.info(`Hausgeist läuft (Zahlungsmodus: ${payments.name})`);

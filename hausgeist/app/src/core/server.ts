@@ -20,6 +20,7 @@ import type { BringClient } from "../adapters/bring.js";
 import { places, zoneAt, type Positions } from "./location.js";
 import { logger } from "./log.js";
 import { CHAT_PAGE } from "./chat-page.js";
+import type { TvHub } from "./tv-hub.js";
 
 const log = logger("server");
 
@@ -79,7 +80,7 @@ async function userFromSupabaseToken(token: string): Promise<AppUser | null> {
  * - App: Authorization: Bearer <Supabase-Access-Token>
  * - Ingress: Home Assistant setzt X-Remote-User-Id.
  */
-export function startServer(config: Config, master: MasterAgent, finance: FinanceAgent, actions: ActionService, ha: HomeAssistant, settings: SettingsStore, fints: FinTSProvider, it: { fritz: FritzBox; pc: WindowsPc; positions: Positions; bring: BringClient }): void {
+export function startServer(config: Config, master: MasterAgent, finance: FinanceAgent, actions: ActionService, ha: HomeAssistant, settings: SettingsStore, fints: FinTSProvider, it: { fritz: FritzBox; pc: WindowsPc; positions: Positions; bring: BringClient; tv: TvHub }): void {
   const resolveUser = async (req: IncomingMessage): Promise<AppUser | null> => {
     const auth = req.headers.authorization ?? "";
     if (auth.startsWith("Bearer ")) return userFromSupabaseToken(auth.slice(7));
@@ -110,6 +111,35 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
         return;
       }
       if (path.endsWith("/api/health")) return json(res, 200, { ok: true, version: process.env.HAUSGEIST_VERSION ?? "dev" });
+
+      // Couchpotato-Fernseher: eigene Geräteschlüssel statt Benutzeranmeldung
+      if (path.includes("/api/tv/")) {
+        const tv = it.tv;
+        const tvPath = path.slice(path.indexOf("/api/tv/") + 7);
+        if (req.method === "POST" && tvPath === "/pair") {
+          const b = await readBody(req);
+          try { return json(res, 200, tv.startPairing(String(b.name ?? ""), String(b.model ?? ""))); }
+          catch (e) { return json(res, (e as { status?: number }).status ?? 400, { error: (e as Error).message }); }
+        }
+        const pm = tvPath.match(/^\/pair\/([\w-]{36})$/);
+        if (req.method === "GET" && pm) return json(res, 200, tv.pollPairing(pm[1]));
+        const dev = tv.authenticate(req.headers.authorization);
+        if (!dev) return json(res, 401, { error: "Fernseher nicht gekoppelt" });
+        if (req.method === "GET" && tvPath === "/next") {
+          const wait = Math.min(Math.max(Number(url.searchParams.get("wait") ?? 25), 1), 30) * 1000;
+          let closed = false;
+          req.on("close", () => { closed = true; });
+          const cmd = await tv.next(dev, wait);
+          if (closed && cmd) { tv.result(dev, cmd.id, undefined, "Verbindung zum Fernseher abgebrochen"); return; }
+          return cmd ? json(res, 200, cmd) : json(res, 200, { id: null, name: dev.name });
+        }
+        if (req.method === "POST" && tvPath === "/result") {
+          const b = await readBody(req, 200_000);
+          tv.result(dev, String(b.id ?? ""), b.result, typeof b.error === "string" ? b.error : undefined);
+          return json(res, 200, { ok: true });
+        }
+        return json(res, 404, { error: "Unbekannt" });
+      }
 
       const user = await resolveUser(req);
       if (!user) return json(res, 401, { error: "Nicht angemeldet oder nicht als Haushaltsmitglied eingetragen." });
@@ -312,6 +342,24 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
         if (typeof body.approve !== "boolean") return json(res, 400, { error: "approve (true/false) fehlt" });
         const r = m[1] === "payment" ? await finance.decide(user, m[2], body.approve) : await actions.decide(user, m[2], body.approve);
         return json(res, r.ok ? 200 : 409, r);
+      }
+
+      // Fernseher verwalten (Admin)
+      if (path.includes("/api/admin/tvs")) {
+        if (user.role !== "admin") return json(res, 403, { error: "Nur für den Admin." });
+        const rest = path.slice(path.indexOf("/api/admin/tvs") + 14);
+        try {
+          if (req.method === "GET" && rest === "") return json(res, 200, { tvs: it.tv.list() });
+          if (req.method === "POST" && rest === "/confirm") {
+            const b = await readBody(req);
+            const d = it.tv.confirm(String(b.code ?? ""), typeof b.name === "string" ? b.name : undefined);
+            return json(res, 200, { id: d.id, name: d.name });
+          }
+          const m = rest.match(/^\/([\w-]{36})$/);
+          if (m && req.method === "DELETE") { it.tv.remove(m[1]); return json(res, 200, { ok: true }); }
+          if (m && req.method === "PUT") { const b = await readBody(req); it.tv.rename(m[1], String(b.name ?? "")); return json(res, 200, { ok: true }); }
+        } catch (e) { return json(res, 400, { error: (e as Error).message }); }
+        return json(res, 404, { error: "Unbekannt" });
       }
 
       if (await handleAdmin(req, res, path, user, { config, settings, ha, fints, fritz: it.fritz, pc: it.pc, bring: it.bring, json, readBody: (r) => readBody(r) })) return;

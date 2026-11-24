@@ -7,6 +7,7 @@ import type { ActionService } from "../core/actions.js";
 import type { FritzBox } from "../adapters/fritzbox.js";
 import type { WindowsPc } from "../adapters/pc.js";
 import type { Positions } from "../core/location.js";
+import type { TvHub } from "../core/tv-hub.js";
 import type { FinanceAgent } from "../agents/finance.js";
 import type { IntakeAgent } from "../agents/intake.js";
 import type { ShoppingList } from "../core/shopping-list.js";
@@ -21,6 +22,7 @@ export interface ToolContext {
   fritz: FritzBox;
   pc: WindowsPc;
   positions: Positions;
+  tv: TvHub;
   /** Einstellungen ändern (wie in der App unter Verwaltung) – nur für Admin-Werkzeuge. */
   saveSettings: (patch: Record<string, unknown>) => Promise<void>;
   finance: FinanceAgent;

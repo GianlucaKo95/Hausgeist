@@ -19,6 +19,7 @@ struct AdminSection: View {
                     NavigationLink { SmartHomeView() } label: { Label("Smart Home", systemImage: "house") }
                     NavigationLink { BringView() } label: { Label("Einkaufslisten (Bring!)", systemImage: "cart") }
                     NavigationLink { NetworkPcView() } label: { Label("Netzwerk & PC", systemImage: "desktopcomputer") }
+                    NavigationLink { TvView() } label: { Label("Fernseher (Couchpotato)", systemImage: "tv") }
                     NavigationLink { RoutinesView() } label: { Label("Routinen & Ablage", systemImage: "clock.arrow.circlepath") }
                 }
             } header: {
