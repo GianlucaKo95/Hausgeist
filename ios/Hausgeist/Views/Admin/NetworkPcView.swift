@@ -158,6 +158,7 @@ struct NetworkPcView: View {
     /// PowerShell-Skript für den PC: OpenSSH-Server + Hausgeist-Schlüssel für Administratoren.
     private var setupScript: String {
         """
+        if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { Write-Host "Bitte in 'Terminal (Administrator)' ausführen." -ForegroundColor Red; return }
         Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
         Start-Service sshd; Set-Service -Name sshd -StartupType Automatic
         New-ItemProperty -Path "HKLM:\\SOFTWARE\\OpenSSH" -Name DefaultShell -Value "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -PropertyType String -Force | Out-Null
