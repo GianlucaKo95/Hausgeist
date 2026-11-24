@@ -105,10 +105,6 @@ struct ChatView: View {
             .navigationTitle("Hausgeist")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("Fertig") { focused = false }
-                }
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
                         Task { await toggleConversation() }
@@ -221,15 +217,25 @@ struct ChatView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
-            Button {
-                Task { await toggleDictation() }
-            } label: {
-                Image(systemName: speech.isListening && !conversation ? "mic.circle.fill" : "mic.circle")
-                    .font(.system(size: 30))
-                    .foregroundStyle(speech.isListening && !conversation ? Color.red : Color.accentColor)
+            if focused && !speech.isListening {
+                // Beim Tippen: Tastatur einklappen statt Mikrofon
+                Button { focused = false } label: {
+                    Image(systemName: "keyboard.chevron.compact.down")
+                        .font(.system(size: 22))
+                        .frame(width: 30, height: 30)
+                }
+                .accessibilityLabel("Tastatur ausblenden")
+            } else {
+                Button {
+                    Task { await toggleDictation() }
+                } label: {
+                    Image(systemName: speech.isListening && !conversation ? "mic.circle.fill" : "mic.circle")
+                        .font(.system(size: 30))
+                        .foregroundStyle(speech.isListening && !conversation ? Color.red : Color.accentColor)
+                }
+                .disabled(busy || conversation)
+                .accessibilityLabel(speech.isListening ? "Diktat beenden" : "Sprechen")
             }
-            .disabled(busy || conversation)
-            .accessibilityLabel(speech.isListening ? "Diktat beenden" : "Sprechen")
             Button {
                 speech.stop()
                 Task { await send() }
