@@ -12,6 +12,9 @@ struct ChatMessage: Identifiable, Equatable, Codable {
 
 /// Chatverlauf und offene Aufträge überleben das Beenden der App.
 enum ChatStore {
+    /// Pro App-Start nur einmal: frischer Chat (alte Gespräche bleiben im Verlauf).
+    @MainActor static var startedFresh = false
+
     private static let historyKey = "chatHistory"
     private static let jobsKey = "pendingChatJobs"
 
@@ -102,6 +105,12 @@ struct ChatView: View {
             .task(id: conversation) { await conversationLoop() }
             .task {
                 if AppConfig.isDemo && AppConfig.launchArg("-history") != nil { showHistory = true }
+                // Beim Start der App immer ein neues Gespräch – frühere findest du unter „Verlauf“.
+                if !ChatStore.startedFresh && !AppConfig.isDemo {
+                    ChatStore.startedFresh = true
+                    if !messages.isEmpty { await reset() }
+                    return
+                }
                 await resumePending()
             }
             .sheet(isPresented: $showHistory) {
@@ -166,6 +175,12 @@ struct ChatView: View {
                 Button(ex) { input = ex; focused = true }
                     .buttonStyle(.bordered)
             }
+            Button {
+                showHistory = true
+            } label: {
+                Label("Früheres Gespräch fortsetzen", systemImage: "clock.arrow.circlepath")
+            }
+            .padding(.top, 8)
         }
         .padding(.top, 24)
     }
@@ -474,8 +489,10 @@ struct ChatView: View {
     }
 
     private func reset() async {
-        try? await APIClient(auth: auth).reset()
-        ChatStore.pendingJobs = []
+        Speaker.shared.stop()
         messages.removeAll()
+        ChatStore.pendingJobs = []
+        UserDefaults.standard.removeObject(forKey: "conversationId")
+        try? await APIClient(auth: auth).reset()
     }
 }
