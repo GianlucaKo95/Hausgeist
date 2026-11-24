@@ -3,18 +3,39 @@ import VisionKit
 import PhotosUI
 import UniformTypeIdentifiers
 
-struct ChatMessage: Identifiable, Equatable {
-    enum Sender { case me, ghost, error }
-    let id = UUID()
+struct ChatMessage: Identifiable, Equatable, Codable {
+    enum Sender: String, Codable { case me, ghost, error }
+    var id = UUID()
     let sender: Sender
     let text: String
+}
+
+/// Chatverlauf und offene Aufträge überleben das Beenden der App.
+enum ChatStore {
+    private static let historyKey = "chatHistory"
+    private static let jobsKey = "pendingChatJobs"
+
+    static func load() -> [ChatMessage] {
+        guard let d = UserDefaults.standard.data(forKey: historyKey),
+              let m = try? JSONDecoder().decode([ChatMessage].self, from: d) else { return [] }
+        return m
+    }
+    static func save(_ messages: [ChatMessage]) {
+        let tail = Array(messages.suffix(100))
+        if let d = try? JSONEncoder().encode(tail) { UserDefaults.standard.set(d, forKey: historyKey) }
+    }
+    static var pendingJobs: [String] {
+        get { UserDefaults.standard.stringArray(forKey: jobsKey) ?? [] }
+        set { UserDefaults.standard.set(Array(Set(newValue)), forKey: jobsKey) }
+    }
 }
 
 struct ChatView: View {
     @Environment(AuthService.self) private var auth
     let me: Me?
 
-    @State private var messages: [ChatMessage] = AppConfig.isDemo ? DemoData.chat : []
+    @State private var messages: [ChatMessage] = AppConfig.isDemo ? DemoData.chat : ChatStore.load()
+    @Environment(\.scenePhase) private var scenePhase
     @State private var input = ""
     @State private var busy = false
     @FocusState private var focused: Bool
@@ -78,6 +99,9 @@ struct ChatView: View {
                 }
             }
             .task(id: conversation) { await conversationLoop() }
+            .task { await resumePending() }
+            .onChange(of: scenePhase) { if scenePhase == .active { Task { await resumePending() } } }
+            .onChange(of: messages) { if !AppConfig.isDemo { ChatStore.save(messages) } }
             .onChange(of: speech.transcript) {
                 if !conversation && speech.isListening { input = speech.transcript }
             }
@@ -295,13 +319,72 @@ struct ChatView: View {
         messages.append(ChatMessage(sender: .me, text: shown))
         busy = true
         defer { busy = false }
+        // Ein paar Sekunden Schonfrist, falls die App gleich in den Hintergrund geht.
+        let bg = UIApplication.shared.beginBackgroundTask(withName: "Hausgeist-Chat")
+        defer { UIApplication.shared.endBackgroundTask(bg) }
         do {
-            let reply = try await APIClient(auth: auth).chat(text, attachments: files)
-            messages.append(ChatMessage(sender: .ghost, text: reply))
-            if speakReplies || conversation { await speakAndWait(reply) }
+            let r = try await APIClient(auth: auth).chatStart(text, attachments: files)
+            if let reply = r.reply {
+                await show(reply)
+            } else if let id = r.jobId {
+                ChatStore.pendingJobs.append(id)
+                await follow(id)
+            }
         } catch {
+            // Abbruch durch den Hintergrund: Der Pi arbeitet weiter – Antwort kommt per Push bzw. beim Zurückkehren.
+            if scenePhase != .active || Self.isInterruption(error) { return }
             messages.append(ChatMessage(sender: .error, text: error.localizedDescription))
         }
+    }
+
+    private func show(_ reply: String) async {
+        messages.append(ChatMessage(sender: .ghost, text: reply))
+        if speakReplies || conversation { await speakAndWait(reply) }
+    }
+
+    /// Wartet per Long-Polling auf einen Auftrag, bis er fertig ist oder die App in den Hintergrund geht.
+    private func follow(_ id: String) async {
+        let api = APIClient(auth: auth)
+        while !Task.isCancelled {
+            do {
+                let s = try await api.chatJob(id, wait: 25)
+                switch s.status {
+                case "done":
+                    ChatStore.pendingJobs.removeAll { $0 == id }
+                    await show(s.reply ?? "")
+                    return
+                case "error":
+                    ChatStore.pendingJobs.removeAll { $0 == id }
+                    messages.append(ChatMessage(sender: .error, text: s.error ?? "Unbekannter Fehler"))
+                    return
+                default:
+                    continue
+                }
+            } catch APIError.http(404, _) {
+                ChatStore.pendingJobs.removeAll { $0 == id }
+                return
+            } catch {
+                return // Hintergrund/Netz weg: beim nächsten Öffnen weiter
+            }
+        }
+    }
+
+    /// Beim Öffnen: offene Aufträge (lokal gemerkt oder auf dem Pi bekannt) abholen.
+    private func resumePending() async {
+        guard !AppConfig.isDemo, AppConfig.serverURL != nil, !busy else { return }
+        let api = APIClient(auth: auth)
+        var ids = ChatStore.pendingJobs
+        if let open = try? await api.openChatJobs() { ids.append(contentsOf: open) }
+        ids = Array(Set(ids))
+        guard !ids.isEmpty else { return }
+        busy = true
+        defer { busy = false }
+        for id in ids { await follow(id) }
+    }
+
+    private static func isInterruption(_ error: Error) -> Bool {
+        guard let e = error as? URLError else { return false }
+        return [.cancelled, .networkConnectionLost, .notConnectedToInternet, .timedOut, .backgroundSessionWasDisconnected].contains(e.code)
     }
 
     // MARK: Sprache
@@ -366,6 +449,7 @@ struct ChatView: View {
 
     private func reset() async {
         try? await APIClient(auth: auth).reset()
+        ChatStore.pendingJobs = []
         messages.removeAll()
     }
 }

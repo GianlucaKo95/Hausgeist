@@ -81,6 +81,32 @@ struct APIClient {
         return r.reply
     }
 
+    /// Startet eine Anfrage als Auftrag auf dem Pi. Kommt die Antwort innerhalb von 25 s, ist sie gleich dabei.
+    func chatStart(_ message: String, attachments: [ChatAttachment] = []) async throws -> (reply: String?, jobId: String?) {
+        if AppConfig.isDemo { return (DemoData.reply, nil) }
+        struct File: Encodable { let name: String; let mime: String; let data: String }
+        struct Body: Encodable { let message: String; let attachments: [File]; let async: Bool }
+        struct R: Decodable { let reply: String?; let job_id: String? }
+        let body = Body(message: message, attachments: attachments.map {
+            File(name: $0.name, mime: $0.mime, data: $0.data.base64EncodedString())
+        }, async: true)
+        let r: R = try await request("api/chat", method: "POST", body: body)
+        return (r.reply, r.job_id)
+    }
+
+    struct ChatJobStatus: Decodable { let status: String; let reply: String?; let error: String? }
+
+    func chatJob(_ id: String, wait: Int) async throws -> ChatJobStatus {
+        try await request("api/chat/jobs/\(id)?wait=\(wait)")
+    }
+
+    func openChatJobs() async throws -> [String] {
+        struct J: Decodable { let id: String }
+        struct R: Decodable { let jobs: [J] }
+        let r: R = try await request("api/chat/jobs")
+        return r.jobs.map(\.id)
+    }
+
     func reset() async throws {
         struct R: Decodable { let ok: Bool }
         let _: R = try await request("api/reset", method: "POST", body: [String: String]())
@@ -116,7 +142,14 @@ struct APIClient {
 
     func request<T: Decodable>(_ path: String, method: String = "GET", body: (any Encodable)? = nil, retry: Bool = true) async throws -> T {
         guard let base = AppConfig.serverURL else { throw APIError.noServer }
-        var req = URLRequest(url: base.appending(path: path))
+        // Pfad und Abfrage getrennt anhängen – appending(path:) würde ein „?“ maskieren.
+        let parts = path.split(separator: "?", maxSplits: 1).map(String.init)
+        var url = base.appending(path: parts[0])
+        if parts.count == 2, var c = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            c.percentEncodedQuery = parts[1]
+            url = c.url ?? url
+        }
+        var req = URLRequest(url: url)
         req.httpMethod = method
         req.setValue("Bearer \(try await auth.validAccessToken())", forHTTPHeaderField: "Authorization")
         if let body {

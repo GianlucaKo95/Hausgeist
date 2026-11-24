@@ -10,6 +10,7 @@ import type { ActionService } from "./actions.js";
 import type { HomeAssistant } from "../adapters/homeassistant.js";
 import type { SettingsStore } from "./settings.js";
 import { handleAdmin } from "./admin-api.js";
+import { ChatJobs } from "./chat-jobs.js";
 import type { FinTSProvider } from "../adapters/payment.js";
 import { logger } from "./log.js";
 import { CHAT_PAGE } from "./chat-page.js";
@@ -83,6 +84,13 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
     return null;
   };
 
+  const jobs = new ChatJobs(async (job) => {
+    const target = (await listUsers()).find((u) => u.id === job.userId);
+    if (!target?.notify_service) return;
+    const text = job.status === "done" ? job.reply ?? "" : `Das hat nicht geklappt: ${job.error}`;
+    await ha.notify(target.notify_service, "Hausgeist", text.slice(0, 1500));
+  });
+
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", "http://localhost");
@@ -92,7 +100,7 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
         res.end(CHAT_PAGE);
         return;
       }
-      if (path.endsWith("/api/health")) return json(res, 200, { ok: true, version: "0.9.9" });
+      if (path.endsWith("/api/health")) return json(res, 200, { ok: true, version: "0.10.0" });
 
       const user = await resolveUser(req);
       if (!user) return json(res, 401, { error: "Nicht angemeldet oder nicht als Haushaltsmitglied eingetragen." });
@@ -123,6 +131,15 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
         if (!message && attachments.length === 0) return json(res, 400, { error: "message fehlt" });
         const work = master.chat(user, message.slice(0, 8000), attachments);
 
+        // App: Anfrage als Auftrag – läuft weiter, auch wenn die App in den Hintergrund geht.
+        if (body.async === true) {
+          const job = jobs.start(user.id, work);
+          const done = await jobs.wait(job.id, user.id, 25_000);
+          if (done && done.status === "done") return json(res, 200, { reply: done.reply, job_id: job.id });
+          if (done && done.status === "error") return json(res, 500, { error: done.error, job_id: job.id });
+          return json(res, 200, { pending: true, job_id: job.id });
+        }
+
         // Siri & Co. können nicht lange warten: nach 20 s kommt die Antwort per Mitteilung.
         if (body.push_if_slow === true) {
           const timeout = new Promise<null>((r) => setTimeout(() => r(null), 20_000));
@@ -134,6 +151,17 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
           return json(res, 200, { reply: "Das dauert etwas länger – ich schicke dir die Antwort als Mitteilung.", pending: true });
         }
         return json(res, 200, { reply: await work });
+      }
+
+      const jobMatch = path.match(/\/api\/chat\/jobs\/([0-9a-f-]{36})$/);
+      if (req.method === "GET" && jobMatch) {
+        const wait = Math.min(Number(new URL(req.url ?? "/", "http://x").searchParams.get("wait") ?? 0) || 0, 25) * 1000;
+        const job = await jobs.wait(jobMatch[1], user.id, wait);
+        if (!job) return json(res, 404, { error: "Auftrag unbekannt (Hausgeist wurde evtl. neu gestartet)" });
+        return json(res, 200, { status: job.status, reply: job.reply ?? null, error: job.error ?? null });
+      }
+      if (req.method === "GET" && path.endsWith("/api/chat/jobs")) {
+        return json(res, 200, { jobs: jobs.open(user.id).map((j) => ({ id: j.id, status: j.status })) });
       }
 
       if (req.method === "GET" && path.endsWith("/api/approvals")) {

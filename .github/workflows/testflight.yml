@@ -12,12 +12,20 @@ concurrency:
 
 jobs:
   upload:
-    runs-on: macos-15
+    # Apple verlangt ab April 2027 das iOS-27-SDK → Xcode 27 (gleicher Runner wie Meeterz)
+    runs-on: xcode-27
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      - name: Xcode auswählen
-        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | grep -viE 'beta|rc' | sort -V | tail -1)"
+      - name: Xcode 27 (Release, keine Beta) auswählen
+        run: |
+          # Beta-Builds erkennt man am Kleinbuchstaben am Ende der Build-Nummer (Apple lehnt sie ab)
+          for dir in $(ls -d /Applications/Xcode_27* 2>/dev/null | grep -viE "beta|candidate|_RC" | sort -Vr); do
+            build=$(DEVELOPER_DIR="$dir" xcodebuild -version 2>/dev/null | awk '/Build version/ {print $3}')
+            echo "Kandidat: $dir ($build)"
+            if [ -n "$build" ] && ! echo "$build" | grep -q '[a-z]$'; then sudo xcode-select -s "$dir"; break; fi
+          done
+          xcodebuild -version
       - name: Bauen, signieren und hochladen
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
