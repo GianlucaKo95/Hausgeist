@@ -2,12 +2,53 @@ import { tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { db } from "../core/db.js";
 import { ok, safe, findUser, type ToolContext } from "./context.js";
+import { whereIs, zones, normZone } from "../core/location.js";
 
 export function familyTools(ctx: ToolContext) {
   /** Wem gehört ein Kalender laut Konfiguration? "shared" = Familienkalender. */
   const ownerOf = (calendar: string) => ctx.calendar.ownerOf(calendar);
 
   return [
+    tool("list_places", "Orte (Zonen) aus Home Assistant, z. B. home, Arbeit, Schule – für Orts-Erinnerungen.", {}, safe(async () =>
+      ok(zones(await ctx.ha.states())))),
+
+    tool("my_location", "Wo ist die anfragende Person gerade (Zone bzw. unterwegs)? Nur der eigene Standort.", {}, safe(async () => {
+      const where = whereIs(ctx.user, ctx.positions, await ctx.ha.states());
+      if (!where) return ok("Kein Standort bekannt – in der Hausgeist-App unter Einstellungen „Standort für Erinnerungen“ einschalten (Zugriff „Immer“).");
+      return ok({ zone: normZone(where.zone), quelle: where.source === "app" ? "Hausgeist-App" : "Home Assistant" });
+    })),
+
+    tool("create_location_reminder", "Erinnerung beim Verlassen oder Erreichen eines Ortes (Zone), z. B. „Wenn ich von zuhause losgehe: Müll mitnehmen“. Nur für die eigene Person.", {
+      zone: z.string().describe("Zonenname aus list_places, z. B. home"),
+      event: z.enum(["leave", "enter"]),
+      message: z.string().min(1),
+      repeat: z.boolean().default(false).describe("Jedes Mal statt nur einmal"),
+    }, safe(async (a) => {
+      const states = await ctx.ha.states();
+      const where = whereIs(ctx.user, ctx.positions, states);
+      if (!where) throw new Error("Für dich ist kein Standort verfügbar – in der Hausgeist-App unter Einstellungen „Standort für Erinnerungen“ einschalten.");
+      const known = zones(states).map((x) => normZone(x.name));
+      if (!known.includes(normZone(a.zone))) throw new Error(`Den Ort „${a.zone}“ gibt es nicht. Vorhanden: ${known.join(", ")}. Neue Orte legst du in Home Assistant unter Einstellungen → Bereiche & Zonen an.`);
+      const current = where.zone;
+      const { data, error } = await db().from("location_reminders").insert({
+        user_id: ctx.user.id, zone: a.zone, event: a.event, message: a.message, repeat: a.repeat, last_state: current,
+      }).select("id").single();
+      if (error) throw error;
+      return ok(`Angelegt (${data.id}): ${a.event === "leave" ? "beim Verlassen" : "beim Erreichen"} von ${a.zone}${a.repeat ? ", jedes Mal" : ", einmalig"}.`);
+    })),
+
+    tool("list_location_reminders", "Eigene aktive Orts-Erinnerungen.", {}, safe(async () => {
+      const { data, error } = await db().from("location_reminders").select("id, zone, event, message, repeat").eq("user_id", ctx.user.id).eq("active", true);
+      if (error) throw error;
+      return ok(data ?? []);
+    })),
+
+    tool("delete_location_reminder", "Orts-Erinnerung löschen.", { id: z.string().uuid() }, safe(async (a) => {
+      const { error } = await db().from("location_reminders").delete().eq("id", a.id).eq("user_id", ctx.user.id);
+      if (error) throw error;
+      return ok("Gelöscht");
+    })),
+
     tool("list_calendars", "Verfügbare Kalender (Apple, Abos wie Abfuhrkalender, Home Assistant), wem sie gehören und ob man eintragen kann.", {}, safe(async () => {
       if (!ctx.calendar.enabled) return ok("Kein Kalender konfiguriert (icloud_*, calendar_feeds, ha_calendars).");
       return ok(await ctx.calendar.listCalendars());

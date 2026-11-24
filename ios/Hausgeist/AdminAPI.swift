@@ -61,6 +61,9 @@ struct AdminSettings: Codable {
     var fritzbox: FritzInfo?
     var pc: PcConfig?
     var pc_public_key: String?
+    var departure_alerts: Bool?
+    var departure_buffer_min: Int?
+    var travel_mode: String?
 }
 
 struct FritzInfo: Codable, Hashable { var host: String; var user: String; var password_set: Bool }
@@ -112,6 +115,9 @@ struct SettingsPatch: Encodable {
     var bring_lists: [BringListConfig]?
     var fritzbox: FritzSave?
     var pc: PcConfig?
+    var departure_alerts: Bool?
+    var departure_buffer_min: Int?
+    var travel_mode: String?
 }
 
 struct Mailbox: Codable, Identifiable, Hashable {

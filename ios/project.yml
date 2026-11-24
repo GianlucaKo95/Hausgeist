@@ -8,7 +8,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.10"
-    MARKETING_VERSION: "0.10.0"
+    MARKETING_VERSION: "0.11.0"
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: ""          # in Xcode unter Signing & Capabilities setzen
 targets:
@@ -46,5 +46,8 @@ targets:
         NSLocalNetworkUsageDescription: Hausgeist verbindet sich mit deinem Home-Assistant-Server.
         NSCameraUsageDescription: Zum Scannen von Briefen, Rechnungen und Verträgen.
         NSMicrophoneUsageDescription: Damit du mit dem Hausgeist sprechen kannst.
+        NSLocationWhenInUseUsageDescription: Damit der Hausgeist dich an Orte und rechtzeitiges Losfahren zu Terminen erinnern kann.
+        NSLocationAlwaysAndWhenInUseUsageDescription: Damit Erinnerungen beim Verlassen oder Erreichen eines Ortes auch funktionieren, wenn die App geschlossen ist.
+        UIBackgroundModes: [location, remote-notification]
         NSSpeechRecognitionUsageDescription: Deine Sprache wird in Text umgewandelt – wenn möglich direkt auf dem iPhone.
         CFBundleDevelopmentRegion: de

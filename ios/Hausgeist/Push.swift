@@ -18,6 +18,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         center.setNotificationCategories([
             UNNotificationCategory(identifier: "HG_DECISION", actions: [approve, reject], intentIdentifiers: [], options: []),
         ])
+        // Standort-Ereignisse können die App im Hintergrund starten – dann gleich weiter überwachen.
+        Task { @MainActor in LocationService.shared.start() }
         return true
     }
 

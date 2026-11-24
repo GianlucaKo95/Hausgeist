@@ -108,6 +108,32 @@ struct APIClient {
         return r.jobs.map(\.id)
     }
 
+    // MARK: Standort
+
+    struct Place: Decodable { let name: String; let lat: Double; let lon: Double; let radius: Double }
+
+    func places() async throws -> [Place] {
+        struct R: Decodable { let places: [Place] }
+        let r: R = try await request("api/places")
+        return r.places
+    }
+
+    func sendLocation(lat: Double, lon: Double, accuracy: Double) async throws {
+        struct B: Encodable { let lat: Double; let lon: Double; let accuracy: Double }
+        struct R: Decodable { let ok: Bool }
+        let _: R = try await request("api/location", method: "POST", body: B(lat: lat, lon: lon, accuracy: accuracy))
+    }
+
+    func sendZoneEvent(zone: String, event: String) async throws {
+        struct R: Decodable { let ok: Bool }
+        let _: R = try await request("api/location/zone", method: "POST", body: ["zone": zone, "event": event])
+    }
+
+    func clearLocation() async throws {
+        struct R: Decodable { let ok: Bool }
+        let _: R = try await request("api/location", method: "DELETE")
+    }
+
     // MARK: Gesprächsverlauf
 
     struct ConversationInfo: Decodable, Identifiable, Hashable {

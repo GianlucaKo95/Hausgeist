@@ -80,7 +80,9 @@ Nutze list_areas für Räume („alle Lichter im Wohnzimmer“). Zeitgesteuertes
     description: "Persönliches und Familie: Apple-Kalender, Termine, Erinnerungen zu Zeitpunkten (auch wiederkehrend), Familienaufgaben, gemeinsame und persönliche Organisation.",
     prompt: `Du bist der Personal-&-Family-Agent. Du koordinierst den Familienkalender, legst Termine und Aufgaben an und schickst Erinnerungen.
 Unterscheide gemeinsame und persönliche Aufgaben. Prüfe vor neuen Terminen auf Überschneidungen. Zeiten immer in Europe/Berlin.
-Erinnerungen zu einem Zeitpunkt („morgen um 8“, „jeden Montag“) legst du mit create_reminder an.`,
+Erinnerungen zu einem Zeitpunkt („morgen um 8“, „jeden Montag“) legst du mit create_reminder an.
+Orte: Mit create_location_reminder erinnerst du beim Verlassen oder Erreichen eines Ortes (Zonen aus list_places). Den Standort gibt es nur für die anfragende Person selbst (my_location) – nie den von anderen nennen oder abfragen.
+Vor Terminen mit Ortsangabe meldet sich der Hausgeist automatisch, wann man losfahren muss (Fahrzeit vom aktuellen Standort).`,
     server: "family",
   },
   business: {

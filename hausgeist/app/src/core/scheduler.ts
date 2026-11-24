@@ -1,4 +1,5 @@
 import { BANKS } from "./config.js";
+import { Travel, whereIs, zoneEdge, leaveAt } from "./location.js";
 import { BANK_INFO, blzFromIban, type FinTSProvider } from "../adapters/payment.js";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -70,6 +71,8 @@ export class Routines {
   private lastDaily: Record<string, string> = {};
   private lastHour = -1;
   private lastAlertCheck = 0;
+  private lastDepartureCheck = 0;
+  private readonly travel: Travel;
   private readonly llm: Anthropic;
 
   constructor(
@@ -78,6 +81,7 @@ export class Routines {
     private readonly base: Omit<ToolContext, "user">,
     private readonly fints?: FinTSProvider,
   ) {
+    this.travel = new Travel(config.dataDir);
     this.llm = new Anthropic({ apiKey: config.anthropic_api_key });
   }
 
@@ -102,6 +106,11 @@ export class Routines {
   private async tick(): Promise<void> {
     const now = berlinNow();
     this.run("erinnerungen", () => this.reminders());
+    this.run("orte", () => this.locationReminders());
+    if (this.config.departure_alerts && Date.now() - this.lastDepartureCheck >= 5 * 60_000) {
+      this.lastDepartureCheck = Date.now();
+      this.run("losfahren", () => this.departures());
+    }
     this.run("schaltungen", () => this.scheduledActions());
     if (Date.now() - this.lastAlertCheck >= 60_000) {
       this.lastAlertCheck = Date.now();
@@ -175,6 +184,72 @@ export class Routines {
       while (next && next.getTime() <= Date.now()) next.setTime(nextRun(next, r.repeat)!.getTime());
       await db().from("reminders").update(next ? { due_at: next.toISOString() } : { done: true }).eq("id", r.id);
     }
+  }
+
+  // ── Orte: beim Verlassen/Erreichen erinnern ─────────────────────────────
+  private async locationReminders(): Promise<void> {
+    const { data } = await db().from("location_reminders").select("*").eq("active", true).limit(100);
+    if (!data?.length) return;
+    const states = await this.ha.states();
+    const users = await listUsers();
+    for (const r of data) {
+      const u = users.find((x) => x.id === r.user_id);
+      if (!u) continue;
+      const where = whereIs(u, this.base.positions, states);
+      if (!where) continue;
+      const now = where.zone;
+      if (now === r.last_state) continue;
+      const fire = zoneEdge(r.last_state, now, r.zone, r.event);
+      const patch: Record<string, unknown> = { last_state: now };
+      if (fire) {
+        if (u.notify_service) await this.ha.notify(u.notify_service, r.event === "leave" ? `Du verlässt ${r.zone}` : `Angekommen: ${r.zone}`, r.message);
+        patch.fired_at = new Date().toISOString();
+        if (!r.repeat) patch.active = false;
+        log.info(`Orts-Erinnerung für ${u.name} (${r.event} ${r.zone}, Quelle ${where.source})`);
+      }
+      await db().from("location_reminders").update(patch).eq("id", r.id);
+    }
+  }
+
+  // ── Termine: rechtzeitig „jetzt losfahren“ ─────────────────────────────
+  private async departures(): Promise<void> {
+    if (!this.base.calendar.enabled) return;
+    const file = join(this.config.dataDir, "departures.json");
+    let sent: Record<string, number> = {};
+    try { sent = JSON.parse(readFileSync(file, "utf8")); } catch { /* erste Prüfung */ }
+    for (const [k, t] of Object.entries(sent)) if (Date.now() - t > 2 * 86_400_000) delete sent[k];
+
+    const states = await this.ha.states();
+    const now = new Date();
+    const events = (await this.base.calendar.events(now.toISOString(), new Date(now.getTime() + 4 * 3600_000).toISOString()))
+      .filter((e) => !e.allDay && e.location && new Date(e.start) > now);
+    if (!events.length) return;
+    const mode = this.config.travel_mode;
+    for (const u of await this.adults()) {
+      const pos = whereIs(u, this.base.positions, states)?.pos;
+      if (!pos) continue;
+      for (const e of events) {
+        const owner = this.base.calendar.ownerOf(e.calendar);
+        if (owner && owner !== "shared" && owner !== u.id) continue;
+        const key = `${u.id}|${e.calendar}|${e.title}|${e.start}`;
+        if (sent[key]) continue;
+        const dest = await this.travel.geocode(e.location!).catch(() => null);
+        if (!dest) continue;
+        const min = await this.travel.minutes(pos, dest, mode).catch(() => null);
+        if (min === null || min < 4) continue; // schon da oder nicht berechenbar
+        const start = new Date(e.start);
+        const at = leaveAt(start, min, this.config.departure_buffer_min, mode);
+        // Kurz vor dem Losfahr-Zeitpunkt melden (Prüfung läuft alle 5 Minuten)
+        if (now.getTime() < at.getTime() - 5 * 60_000) continue;
+        const time = start.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" });
+        const how = { car: "Fahrt", bike: "mit dem Rad", foot: "zu Fuß" }[mode];
+        const late = now > at ? " – du bist schon etwas spät dran" : "";
+        await this.notifyUsers([u], `Zeit loszugehen: ${e.title}`, `${e.title} um ${time} in ${e.location!.split("\n")[0]}. Etwa ${min} Min. ${how}${late}.`);
+        sent[key] = Date.now();
+        log.info(`Losfahr-Hinweis für ${u.name}: ${e.title}`);
+      }
+    }
+    writeFileSync(file, JSON.stringify(sent));
   }
 
   // ── Geplante Schaltungen ─────────────────────────────────────────────────

@@ -9,6 +9,7 @@ struct SettingsView: View {
     @State private var status: String?
     @State private var checking = false
     @AppStorage("speakReplies") private var speakReplies = false
+    @AppStorage(LocationService.enabledKey) private var shareLocation = false
     /// Nur für Screenshots im Demo-Modus: direkt eine Verwaltungsseite öffnen.
     @State private var demoScreen: String? = AppConfig.isDemo ? AppConfig.launchArg("-admin") : nil
 
@@ -33,9 +34,19 @@ struct SettingsView: View {
                 } header: {
                     Text("Server")
                 } footer: {
-                    Text("Adresse des Hausgeist-Add-ons im VPN (Tailscale/WireGuard), Port 8099.")
+                    Text("Adresse des Hausgeists, z. B. https://homegeist.heimdns.de")
                 }
                 AdminSection(me: me)
+                Section {
+                    Toggle("Standort für Erinnerungen", isOn: $shareLocation)
+                        .onChange(of: shareLocation) {
+                            if shareLocation { LocationService.shared.start() } else { LocationService.shared.stop() }
+                        }
+                } header: {
+                    Text("Standort")
+                } footer: {
+                    Text("Für „Erinnere mich, wenn ich das Haus verlasse“ und „Jetzt losfahren zu Termin XY“. Bitte „Immer“ erlauben. Die App meldet nur größere Ortswechsel und das Betreten/Verlassen eurer Orte aus Home Assistant – akkuschonend. Gespeichert wird nur der letzte Standort, auf dem Pi.")
+                }
                 Section {
                     Toggle("Antworten vorlesen", isOn: $speakReplies)
                 } header: {

@@ -38,6 +38,9 @@ const requireAdult = (u: AppUser) => { if (u.role === "child") throw new HttpErr
 const time = z.string().regex(/^(([01]\d|2[0-3]):[0-5]\d)?$/, "Uhrzeit im Format HH:MM");
 
 const SettingsBody = z.object({
+  departure_alerts: z.boolean().optional(),
+  departure_buffer_min: z.number().int().min(0).max(60).optional(),
+  travel_mode: z.enum(["car", "bike", "foot"]).optional(),
   fritzbox: z.object({
     host: z.string().trim().min(1).max(100).default("fritz.box"),
     user: z.string().trim().max(60).default(""),
@@ -171,6 +174,7 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
         ha_entities: config.ha_entities, energy: config.energy, bring_lists: config.bring_lists,
         daily_brief: config.daily_brief, evening_check: config.evening_check, mail_triage: config.mail_triage,
         weekly_offers: config.weekly_offers, calendar_insights: config.calendar_insights,
+        departure_alerts: config.departure_alerts, departure_buffer_min: config.departure_buffer_min, travel_mode: config.travel_mode,
         paperless_url: config.paperless_url, paperless_token_set: Boolean(config.paperless_token),
         push_enabled: Boolean(config.apns_key_id && config.apns_key),
         payment_mode: config.payment_mode, fints_product_id: config.fints_product_id,

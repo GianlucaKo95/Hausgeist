@@ -6,6 +6,7 @@ import type { Paperless } from "../adapters/paperless.js";
 import type { ActionService } from "../core/actions.js";
 import type { FritzBox } from "../adapters/fritzbox.js";
 import type { WindowsPc } from "../adapters/pc.js";
+import type { Positions } from "../core/location.js";
 import type { FinanceAgent } from "../agents/finance.js";
 import type { IntakeAgent } from "../agents/intake.js";
 import type { ShoppingList } from "../core/shopping-list.js";
@@ -19,6 +20,7 @@ export interface ToolContext {
   actions: ActionService;
   fritz: FritzBox;
   pc: WindowsPc;
+  positions: Positions;
   finance: FinanceAgent;
   intake: IntakeAgent;
   shopping: ShoppingList;
