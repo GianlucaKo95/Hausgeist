@@ -1,8 +1,10 @@
 name: Hausgeist
-version: "0.12.1"
+version: "0.12.2"
 slug: hausgeist
 description: Persönliches Agenten-Netzwerk mit Master-Agent und acht Fachagenten
 url: https://github.com/GianlucaKo95/hausgeist
+# Fertiges Image von GitHub – Home Assistant lädt es nur herunter, statt auf dem Pi zu bauen.
+image: "ghcr.io/gianlucako95/hausgeist-{arch}"
 arch:
   - aarch64
   - amd64
