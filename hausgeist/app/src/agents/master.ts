@@ -62,9 +62,9 @@ und Wunschlisten (auf der eigenen Liste nie verraten, was reserviert ist). Für 
     extraTools: ["WebSearch", "WebFetch"],
   },
   communication: {
-    description: "Private und gemeinsame Postfächer: Mails lesen, sortieren, priorisieren, Antworten entwerfen und zur Freigabe vorlegen, Termine aus Mails erkennen.",
+    description: "Private und gemeinsame Postfächer: Mails lesen, sortieren, priorisieren, Antworten entwerfen und zur Freigabe vorlegen, Termine aus Mails erkennen, PDF-Anhänge vorhandener Mails ablegen oder als Rechnung/Vertrag verarbeiten.",
     prompt: `Du bist der Communication-Agent für private und gemeinsame Postfächer. Du sortierst, priorisierst und entwirfst Antworten.
-Senden geht nur über request_send_mail. Erkennst du Termine oder Absprachen, melde sie in deiner Antwort, damit der Master sie an den Family-Agenten gibt.`,
+Senden geht nur über request_send_mail. Soll ein Anhang abgelegt oder bezahlt werden, nutze file_mail_attachments (mode 'archive' = nur Paperless, 'process' = einordnen wie neue Post). Erkennst du Termine oder Absprachen, melde sie in deiner Antwort, damit der Master sie an den Family-Agenten gibt.`,
     server: "mail",
   },
   household: {

@@ -71,6 +71,30 @@ export async function readMail(mb: MailboxConfig, uid: number) {
   });
 }
 
+/** Anhänge einer vorhandenen Mail (PDFs und Bilder) – kleine Bilder wie Logos und Signaturen werden übergangen. */
+export async function mailAttachments(mb: MailboxConfig, uid: number) {
+  return withImap(mb, async (c) => {
+    const msg = await c.fetchOne(String(uid), { source: true }, { uid: true });
+    if (!msg || !msg.source) throw new Error(`Mail ${uid} nicht gefunden`);
+    const p = await simpleParser(msg.source);
+    const files = p.attachments
+      .map((a) => {
+        const name = a.filename ?? "anhang";
+        const mime = name.toLowerCase().endsWith(".pdf") ? "application/pdf" : a.contentType;
+        return { filename: name, mime, data: a.content as Buffer };
+      })
+      .filter((f) => f.mime === "application/pdf" || (/^image\/(jpeg|png)$/.test(f.mime) && f.data.length > 30_000));
+    return {
+      messageId: p.messageId ?? null,
+      from: p.from?.text ?? "",
+      subject: p.subject ?? "",
+      date: p.date?.toISOString() ?? null,
+      text: (p.text ?? "").slice(0, 4000),
+      files,
+    };
+  });
+}
+
 export async function moveMail(mb: MailboxConfig, uid: number, folder: string): Promise<void> {
   await withImap(mb, async (c) => {
     await c.mailboxCreate(folder).catch(() => undefined);
