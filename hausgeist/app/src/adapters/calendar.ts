@@ -82,12 +82,23 @@ export class AppleCalendar {
     if (this.client) return this.client;
     const client = new DAVClient({
       serverUrl: "https://caldav.icloud.com",
-      credentials: { username: this.config.icloud_user, password: this.config.icloud_app_password },
+      credentials: { username: this.config.icloud_user.trim(), password: this.config.icloud_app_password.replace(/\s+/g, "") },
       authMethod: "Basic",
       defaultAccountType: "caldav",
     });
-    await client.login();
-    this.calendars = await client.fetchCalendars();
+    if (!this.config.icloud_user || !this.config.icloud_app_password) {
+      throw new Error("Apple-Kalender ist nicht eingerichtet – in der Hausgeist-App unter Einstellungen → Verwaltung → Kalender Apple-ID und App-Passwort eintragen.");
+    }
+    try {
+      await client.login();
+      this.calendars = await client.fetchCalendars();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/401|unauthori/i.test(msg)) {
+        throw new Error("iCloud lehnt die Anmeldung ab (401). Bitte in der Hausgeist-App unter Einstellungen → Verwaltung → Kalender die Apple-ID (Haupt-E-Mail der Apple-ID) und ein neues app-spezifisches Passwort eintragen und auf „Verbinden“ tippen.");
+      }
+      throw e;
+    }
     this.client = client;
     return client;
   }

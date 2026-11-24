@@ -51,7 +51,9 @@ struct ChatView: View {
                     }
                     .padding()
                 }
-                .scrollDismissesKeyboard(.interactively)
+                .scrollDismissesKeyboard(.immediately)
+                .contentShape(Rectangle())
+                .onTapGesture { focused = false }
                 .onChange(of: messages) {
                     if let last = messages.last?.id { withAnimation { proxy.scrollTo(last, anchor: .bottom) } }
                 }
@@ -103,6 +105,10 @@ struct ChatView: View {
             .navigationTitle("Hausgeist")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Fertig") { focused = false }
+                }
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
                         Task { await toggleConversation() }
