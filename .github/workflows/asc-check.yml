@@ -9,6 +9,11 @@ jobs:
       ASC_KEY_P8: ${{ secrets.APP_STORE_CONNECT_KEY_P8 }}
       TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
+      - uses: actions/checkout@v4
+      - name: Builds und Verarbeitungsstatus
+        run: |
+          printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/key.p8"
+          ASC_KEY_PATH="$RUNNER_TEMP/key.p8" python3 ci/asc.py status de.hausgeist.koeven
       - run: pip install -q pyjwt cryptography requests
       - shell: python
         run: |
