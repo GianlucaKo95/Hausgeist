@@ -46,7 +46,8 @@ jobs:
       - name: Version lesen
         id: v
         run: |
-          v=$(sed -nE 's/^version: *"?([^"]+)"?/\1/p' hausgeist/config.yaml)
+          # Zu bauende Version steht in next-version; config.yaml wird erst nach dem Hochladen angepasst
+          v=$(tr -d ' \n' < hausgeist/next-version)
           echo "version=$v" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v3
       - name: Bei ghcr.io anmelden
@@ -61,7 +62,9 @@ jobs:
         with:
           context: hausgeist
           platforms: ${{ matrix.platform }}
-          build-args: BUILD_FROM=ghcr.io/home-assistant/${{ matrix.arch }}-base:3.21
+          build-args: |
+            BUILD_FROM=ghcr.io/home-assistant/${{ matrix.arch }}-base:3.21
+            BUILD_VERSION=${{ steps.v.outputs.version }}
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           tags: |
             ghcr.io/gianlucako95/hausgeist-${{ matrix.arch }}:${{ steps.v.outputs.version }}
@@ -73,3 +76,26 @@ jobs:
             org.opencontainers.image.source=https://github.com/GianlucaKo95/Hausgeist
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+
+  # Erst wenn beide Images oben sind, sieht Home Assistant die neue Version (sonst „manifest unknown“).
+  publish:
+    needs: docker
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Version in config.yaml freigeben
+        run: |
+          next=$(tr -d ' \n' < hausgeist/next-version)
+          current=$(sed -nE 's/^version: *"?([^"]+)"?/\1/p' hausgeist/config.yaml)
+          if [ "$next" = "$current" ]; then echo "Version $current ist schon freigegeben"; exit 0; fi
+          sed -i -E "s/^version: .*/version: \"$next\"/" hausgeist/config.yaml
+          git config user.name "hausgeist-ci"
+          git config user.email "ci@users.noreply.github.com"
+          git add hausgeist/config.yaml
+          git commit -m "Add-on $next freigegeben [skip ci]"
+          git pull --rebase -q origin main
+          git push origin HEAD:main
+          echo "### Add-on $next ist in Home Assistant verfügbar" >> "$GITHUB_STEP_SUMMARY"

@@ -2,7 +2,8 @@ ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
 RUN apk add --no-cache nodejs npm libstdc++ libgcc tzdata
-ENV TZ=Europe/Berlin
+ARG BUILD_VERSION=dev
+ENV TZ=Europe/Berlin HAUSGEIST_VERSION=$BUILD_VERSION
 
 WORKDIR /app
 COPY app/package.json app/package-lock.json ./
