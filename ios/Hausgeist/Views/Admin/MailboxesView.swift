@@ -65,8 +65,8 @@ struct MailboxesView: View {
         let api = APIClient(auth: auth)
         do {
             boxes = try await api.mailboxes()
-            people = (try? await api.people()) ?? []
             error = nil
+            do { people = try await api.people() } catch { self.error = "Personen nicht geladen: \(error.localizedDescription)" }
         } catch { self.error = error.localizedDescription }
     }
 }
@@ -77,6 +77,8 @@ struct MailboxForm: View {
     let me: Me
     let box: Mailbox?
     let people: [Person]
+    @State private var loadedPeople: [Person] = []
+    private var owners: [Person] { (loadedPeople.isEmpty ? people : loadedPeople).filter { $0.role != "child" } }
     var onSaved: () async -> Void
 
     @State private var name = ""
@@ -136,7 +138,7 @@ struct MailboxForm: View {
                     if me.role == "admin" {
                         Picker("Besitzer", selection: $ownerId) {
                             Text("Niemand (Haushalt)").tag("")
-                            ForEach(people.filter { $0.role != "child" }) { p in Text(p.name).tag(p.id) }
+                            ForEach(owners) { p in Text(p.name).tag(p.id) }
                         }
                     }
                     Picker("Sichtbar für", selection: $visibility) {
@@ -169,6 +171,11 @@ struct MailboxForm: View {
                 }
             }
             .onAppear(perform: fill)
+            .task {
+                guard people.isEmpty, me.role == "admin" else { return }
+                do { loadedPeople = try await APIClient(auth: auth).people() }
+                catch { self.error = "Personen nicht geladen: \(error.localizedDescription)" }
+            }
         }
     }
 

@@ -151,6 +151,23 @@ struct Person: Codable, Identifiable, Hashable {
     var email: String?
     var approval_limit_cents: Int
     var has_login: Bool
+
+    init(id: String, name: String, role: String, email: String?, approval_limit_cents: Int, has_login: Bool) {
+        self.id = id; self.name = name; self.role = role; self.email = email
+        self.approval_limit_cents = approval_limit_cents; self.has_login = has_login
+    }
+
+    // Tolerant dekodieren: fehlende oder anders getypte Felder dürfen die Liste nicht leeren.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = (try? c.decode(String.self, forKey: .name)) ?? "?"
+        role = (try? c.decode(String.self, forKey: .role)) ?? "adult"
+        email = try? c.decodeIfPresent(String.self, forKey: .email)
+        approval_limit_cents = (try? c.decode(Int.self, forKey: .approval_limit_cents))
+            ?? (try? c.decode(Double.self, forKey: .approval_limit_cents)).map { Int($0) } ?? 0
+        has_login = (try? c.decode(Bool.self, forKey: .has_login)) ?? false
+    }
 }
 
 struct PersonSave: Encodable {
