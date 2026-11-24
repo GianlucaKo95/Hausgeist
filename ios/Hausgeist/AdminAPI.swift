@@ -281,6 +281,13 @@ extension APIClient {
         return try await request("api/admin/banks/\(bank)/test", method: "POST", body: b)
     }
 
+    struct EnergyDetection: Decodable { let pick: EnergySensors; let fromDashboard: Bool }
+
+    func detectEnergy() async throws -> EnergyDetection {
+        if AppConfig.isDemo { return EnergyDetection(pick: EnergySensors(pv_power: "sensor.inverter_input_power", battery_soc: "sensor.battery_soc", battery_power: "sensor.battery_power", grid_power: "sensor.grid_power", house_power: "sensor.house_power"), fromDashboard: true) }
+        return try await request("api/admin/energy/detect", method: "POST", body: [String: String]())
+    }
+
     func testBring(email: String, password: String?) async throws -> [BringRemoteList] {
         if AppConfig.isDemo { return [BringRemoteList(listUuid: "11111111-1111-1111-1111-111111111111", name: "Zuhause"), BringRemoteList(listUuid: "22222222-2222-2222-2222-222222222222", name: "Party")] }
         struct B: Encodable { let email: String; let password: String? }

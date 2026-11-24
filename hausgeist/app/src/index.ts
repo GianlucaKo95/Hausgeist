@@ -2,6 +2,7 @@ import { FritzBox } from "./adapters/fritzbox.js";
 import { WindowsPc } from "./adapters/pc.js";
 import { Positions } from "./core/location.js";
 import { BringClient } from "./adapters/bring.js";
+import { detectFromHa } from "./core/energy-detect.js";
 import { ShoppingList } from "./core/shopping-list.js";
 import { loadConfig } from "./core/config.js";
 import { db, enableAppPush } from "./core/db.js";
@@ -77,7 +78,9 @@ async function main() {
   const bring = new BringClient(config);
   const shopping = new ShoppingList(config, ha, bring);
   const positions = new Positions(config.dataDir);
-  const base = { config, ha, calendar, paperless, actions, finance, intake, shopping, fritz, pc, positions };
+  let settingsRef: SettingsStore | undefined;
+  const saveSettings = async (patch: Record<string, unknown>) => { await settingsRef?.update(patch); };
+  const base = { config, ha, calendar, paperless, actions, finance, intake, shopping, fritz, pc, positions, saveSettings };
   const master = new MasterAgent(config, base);
   const routines = new Routines(config, ha, base, fints);
 
@@ -90,6 +93,15 @@ async function main() {
 
   communication.start();
   const settings = new SettingsStore(config);
+  settingsRef = settings;
+  // Energie-Sensoren noch nicht gewählt? Selbst suchen (Energie-Dashboard, Gerätenamen).
+  if (!Object.values(config.energy).some(Boolean)) {
+    detectFromHa(ha).then(async (r) => {
+      if (!Object.keys(r.pick).length) return;
+      await settings.update({ energy: r.pick });
+      log.info(`Energie-Sensoren automatisch gewählt: ${Object.entries(r.pick).map(([k, v]) => `${k}=${v}`).join(", ")}`);
+    }).catch((e) => log.warn("Energie-Sensoren nicht erkannt", e));
+  }
   settings.onChange(async (changed) => {
     if (changed.includes("mailboxes")) await communication.restart();
     if (changed.includes("icloud_user") || changed.includes("icloud_app_password")) apple.reset();

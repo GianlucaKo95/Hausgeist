@@ -14,6 +14,7 @@ struct SmartHomeView: View {
     @State private var allowed: Set<String> = []
     @State private var patterns: [String] = []
     @State private var energy = EnergySensors()
+    @State private var detecting = false
     @State private var search = ""
     @State private var error: String?
     @State private var info: String?
@@ -41,10 +42,16 @@ struct SmartHomeView: View {
                 energyPicker("Speicher-Leistung", \.battery_power)
                 energyPicker("Netz (Bezug/Einspeisung)", \.grid_power)
                 energyPicker("Hausverbrauch", \.house_power)
+                Button {
+                    Task { await detect() }
+                } label: {
+                    HStack { Label("Automatisch erkennen", systemImage: "wand.and.stars"); if detecting { Spacer(); ProgressView() } }
+                }
+                .disabled(detecting)
             } header: {
                 Text("Energie")
             } footer: {
-                Text("Damit plant der Hausgeist Verbraucher bei PV-Überschuss und warnt bei vollem Speicher.")
+                Text("Damit plant der Hausgeist Verbraucher bei PV-Überschuss und warnt bei vollem Speicher. „Automatisch erkennen“ nutzt dein Energie-Dashboard in Home Assistant und die Gerätenamen – danach prüfen und sichern.")
             }
 
             if !patterns.isEmpty {
@@ -78,6 +85,18 @@ struct SmartHomeView: View {
         .navigationTitle("Smart Home")
         .toolbar { Button("Sichern") { Task { await save() } }.disabled(busy) }
         .task { await load() }
+    }
+
+    private func detect() async {
+        detecting = true; defer { detecting = false }
+        do {
+            let r = try await APIClient(auth: auth).detectEnergy()
+            energy = EnergySensors(pv_power: r.pick.pv_power ?? energy.pv_power, battery_soc: r.pick.battery_soc ?? energy.battery_soc,
+                                   battery_power: r.pick.battery_power ?? energy.battery_power, grid_power: r.pick.grid_power ?? energy.grid_power,
+                                   house_power: r.pick.house_power ?? energy.house_power)
+            let n = [r.pick.pv_power, r.pick.battery_soc, r.pick.battery_power, r.pick.grid_power, r.pick.house_power].compactMap { $0 }.count
+            info = "\(n) von 5 Sensoren gefunden\(r.fromDashboard ? " (über das Energie-Dashboard)" : "") – bitte prüfen und sichern."
+        } catch { self.error = error.localizedDescription }
     }
 
     private func energyPicker(_ title: String, _ key: WritableKeyPath<EnergySensors, String?>) -> some View {

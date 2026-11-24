@@ -7,6 +7,7 @@ import { z } from "zod";
 import { BANKS, type BankKey, type Config, type MailboxConfig } from "./config.js";
 import type { FritzBox } from "../adapters/fritzbox.js";
 import type { BringClient } from "../adapters/bring.js";
+import { detectFromHa } from "./energy-detect.js";
 import type { WindowsPc } from "../adapters/pc.js";
 import { BANK_INFO, blzFromIban, type FinTSProvider } from "../adapters/payment.js";
 import type { SettingsStore } from "./settings.js";
@@ -458,6 +459,14 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
       } finally {
         config.fints_product_id = productBefore;
       }
+      return true;
+    }
+
+    // ── Energie-Sensoren automatisch erkennen ─────────────────────────
+    if (route === "energy/detect" && method === "POST") {
+      requireAdmin(user);
+      const r = await detectFromHa(d.ha);
+      json(res, 200, r);
       return true;
     }
 

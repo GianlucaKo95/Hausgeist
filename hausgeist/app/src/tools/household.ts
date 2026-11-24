@@ -2,7 +2,8 @@ import { tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { db } from "../core/db.js";
 import { entityAllowed, isSensitiveHaService } from "../core/checks.js";
-import { ok, safe, requireAdult, type ToolContext } from "./context.js";
+import { ok, safe, requireAdult, requireAdmin, type ToolContext } from "./context.js";
+import { detectFromHa } from "../core/energy-detect.js";
 
 export function householdTools(ctx: ToolContext) {
   const allowed = (id: string) => entityAllowed(id, ctx.config.ha_entities);
@@ -46,8 +47,19 @@ export function householdTools(ctx: ToolContext) {
         const s = await ctx.ha.state(id);
         out[key] = s ? { entity_id: id, value: s.state, unit: s.attributes.unit_of_measurement ?? null } : { entity_id: id, value: null };
       }
-      if (Object.keys(out).length === 0) return ok("Keine Energiesensoren konfiguriert (Option energy).");
+      if (Object.keys(out).length === 0) return ok("Keine Energiesensoren eingerichtet – mit detect_energy_sensors suchen.");
       return ok(out);
+    })),
+
+    tool("detect_energy_sensors", "Energie-Sensoren (PV, Speicher, Netz, Hausverbrauch) selbst in Home Assistant finden – über das Energie-Dashboard und Gerätenamen. Mit apply=true übernehmen (nur Admin).", {
+      apply: z.boolean().default(false),
+    }, safe(async (a) => {
+      const r = await detectFromHa(ctx.ha);
+      if (a.apply) {
+        requireAdmin(ctx);
+        await ctx.saveSettings({ energy: r.pick });
+      }
+      return ok({ übernommen: a.apply, auswahl: r.pick, quelle: r.fromDashboard ? "Energie-Dashboard + Gerät" : "Namensregeln", alternativen: r.candidates });
     })),
 
     tool("energy_history", "Verlauf eines Energiesensors der letzten Stunden, z. B. um Lastverschiebung zu planen.", {

@@ -21,6 +21,8 @@ export interface ToolContext {
   fritz: FritzBox;
   pc: WindowsPc;
   positions: Positions;
+  /** Einstellungen ändern (wie in der App unter Verwaltung) – nur für Admin-Werkzeuge. */
+  saveSettings: (patch: Record<string, unknown>) => Promise<void>;
   finance: FinanceAgent;
   intake: IntakeAgent;
   shopping: ShoppingList;
