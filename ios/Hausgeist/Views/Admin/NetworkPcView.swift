@@ -163,7 +163,7 @@ struct NetworkPcView: View {
         New-ItemProperty -Path "HKLM:\\SOFTWARE\\OpenSSH" -Name DefaultShell -Value "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -PropertyType String -Force | Out-Null
         $f = "$env:ProgramData\\ssh\\administrators_authorized_keys"
         Add-Content -Force -Path $f -Value '\(publicKey)'
-        icacls.exe $f /inheritance:r /grant "Administrators:F" /grant "SYSTEM:F" | Out-Null
+        icacls.exe $f /inheritance:r /grant "*S-1-5-32-544:F" /grant "*S-1-5-18:F" | Out-Null
         if (-not (Get-NetFirewallRule -Name sshd -ErrorAction SilentlyContinue)) { New-NetFirewallRule -Name sshd -DisplayName "OpenSSH Server" -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 -Profile Private }
         Write-Host "Fertig – Hausgeist kann sich jetzt anmelden."
         """
