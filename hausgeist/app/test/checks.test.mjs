@@ -56,3 +56,12 @@ test("Kontovorschlag", () => {
   assert.equal(suggestAccount(accounts, "Unbekannt", null)?.id, "s");
   assert.equal(suggestAccount(accounts, "KoeVen GbR", "s")?.id, "s");
 });
+
+import { resolveFolder } from "../dist/adapters/mail.js";
+test("Mail-Ordner werden auch über Namen und Spam-Kennung gefunden", () => {
+  const f = [{ path: "INBOX", name: "INBOX" }, { path: "Unbekannt", name: "Unbekannt" }, { path: "INBOX/Rechnungen", name: "Rechnungen" }, { path: "Spamverdacht", name: "Spamverdacht", special: "\\Junk" }];
+  assert.equal(resolveFolder(f, "unbekannt"), "Unbekannt");
+  assert.equal(resolveFolder(f, "Rechnungen"), "INBOX/Rechnungen");
+  assert.equal(resolveFolder(f, "Spam"), "Spamverdacht");
+  assert.equal(resolveFolder(f, "Gibtsnicht"), undefined);
+});

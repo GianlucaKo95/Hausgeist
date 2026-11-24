@@ -175,13 +175,27 @@ struct ChatView: View {
         HStack {
             if msg.sender == .me { Spacer(minLength: 40) }
             Text(LocalizedStringKey(msg.text))
-                .textSelection(.enabled)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(background(for: msg.sender), in: RoundedRectangle(cornerRadius: 16))
                 .foregroundStyle(msg.sender == .me ? .white : .primary)
+                .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 16))
+                .contextMenu {
+                    Button("Kopieren", systemImage: "doc.on.doc") { UIPasteboard.general.string = Self.plain(msg.text) }
+                    ShareLink(item: Self.plain(msg.text)) { Label("Teilen", systemImage: "square.and.arrow.up") }
+                    if msg.sender == .ghost {
+                        Button("Vorlesen", systemImage: "speaker.wave.2") { Task { await speakAndWait(msg.text) } }
+                    }
+                }
             if msg.sender != .me { Spacer(minLength: 40) }
         }
+    }
+
+    /// Markdown-Zeichen (**fett** usw.) fürs Kopieren entfernen.
+    static func plain(_ markdown: String) -> String {
+        let opts = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        guard let a = try? AttributedString(markdown: markdown, options: opts) else { return markdown }
+        return String(a.characters)
     }
 
     private func background(for sender: ChatMessage.Sender) -> Color {

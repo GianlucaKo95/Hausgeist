@@ -11,6 +11,32 @@ export interface MailSummary {
   seen: boolean;
 }
 
+export interface FolderInfo { path: string; name: string; special?: string; messages?: number }
+
+/** Alle Ordner eines Postfachs (Posteingang, Unterordner, Spam/„Unbekannt“ usw.). */
+export async function listFolders(mb: MailboxConfig): Promise<FolderInfo[]> {
+  const client = new ImapFlow({ host: mb.host, port: mb.port, secure: mb.tls, auth: { user: mb.user, pass: mb.password }, logger: false });
+  await client.connect();
+  try {
+    const list = await client.list({ statusQuery: { messages: true } });
+    return list.filter((f) => !f.flags?.has("\\Noselect")).map((f) => ({
+      path: f.path, name: f.name, special: f.specialUse || undefined, messages: f.status?.messages,
+    }));
+  } finally {
+    await client.logout().catch(() => undefined);
+  }
+}
+
+/** Ordnerangabe auf den echten IMAP-Pfad abbilden (Groß-/Kleinschreibung, Name statt Pfad, „Spam“ → \\Junk). */
+export function resolveFolder(folders: FolderInfo[], wanted: string): string | undefined {
+  const w = wanted.trim().toLowerCase();
+  const special: Record<string, string> = { spam: "\\Junk", junk: "\\Junk", papierkorb: "\\Trash", trash: "\\Trash", gesendet: "\\Sent", sent: "\\Sent", entwürfe: "\\Drafts", archiv: "\\Archive" };
+  return folders.find((f) => f.path.toLowerCase() === w)?.path
+    ?? folders.find((f) => f.name.toLowerCase() === w)?.path
+    ?? folders.find((f) => f.path.toLowerCase().endsWith("/" + w) || f.path.toLowerCase().endsWith("." + w))?.path
+    ?? (special[w] ? folders.find((f) => f.special === special[w])?.path : undefined);
+}
+
 async function withImap<T>(mb: MailboxConfig, fn: (c: ImapFlow) => Promise<T>): Promise<T> {
   const client = new ImapFlow({
     host: mb.host, port: mb.port, secure: mb.tls,

@@ -64,7 +64,7 @@ und Wunschlisten (auf der eigenen Liste nie verraten, was reserviert ist). Für 
   communication: {
     description: "Private und gemeinsame Postfächer: Mails lesen, sortieren, priorisieren, Antworten entwerfen und zur Freigabe vorlegen, Termine aus Mails erkennen, PDF-Anhänge vorhandener Mails ablegen oder als Rechnung/Vertrag verarbeiten.",
     prompt: `Du bist der Communication-Agent für private und gemeinsame Postfächer. Du sortierst, priorisierst und entwirfst Antworten.
-Senden geht nur über request_send_mail. Soll ein Anhang abgelegt oder bezahlt werden, nutze file_mail_attachments (mode 'archive' = nur Paperless, 'process' = einordnen wie neue Post). Erkennst du Termine oder Absprachen, melde sie in deiner Antwort, damit der Master sie an den Family-Agenten gibt.`,
+Senden geht nur über request_send_mail. Mails liegen nicht nur im Posteingang: Mit list_folders siehst du alle Ordner (z. B. „Unbekannt“, Spam, eigene Ordner); list_mails, read_mail und file_mail_attachments haben dafür den Parameter folder. Findest du etwas nicht, schau auch in den anderen Ordnern nach. Soll ein Anhang abgelegt oder bezahlt werden, nutze file_mail_attachments (mode 'archive' = nur Paperless, 'process' = einordnen wie neue Post). Erkennst du Termine oder Absprachen, melde sie in deiner Antwort, damit der Master sie an den Family-Agenten gibt.`,
     server: "mail",
   },
   household: {
