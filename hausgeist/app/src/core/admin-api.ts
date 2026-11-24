@@ -175,6 +175,7 @@ export function explainImap(e: unknown, host: string): string {
 
 async function imapTest(mb: { host: string; port: number; tls: boolean; user: string; password: string }): Promise<string[]> {
   const c = new ImapFlow({ host: mb.host, port: mb.port, secure: mb.tls, auth: { user: mb.user, pass: mb.password }, logger: false });
+  c.on("error", () => undefined);
   await c.connect();
   try {
     const list = await c.list();

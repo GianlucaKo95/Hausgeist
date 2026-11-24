@@ -16,6 +16,8 @@ export interface FolderInfo { path: string; name: string; special?: string; mess
 /** Alle Ordner eines Postfachs (Posteingang, Unterordner, Spam/„Unbekannt“ usw.). */
 export async function listFolders(mb: MailboxConfig): Promise<FolderInfo[]> {
   const client = new ImapFlow({ host: mb.host, port: mb.port, secure: mb.tls, auth: { user: mb.user, pass: mb.password }, logger: false });
+  // Verbindungsfehler (z. B. „Socket timeout“) kommen als Ereignis – ohne Zuhörer würde Node abstürzen
+  client.on("error", () => undefined);
   await client.connect();
   try {
     const list = await client.list({ statusQuery: { messages: true } });
@@ -42,6 +44,7 @@ async function withImap<T>(mb: MailboxConfig, fn: (c: ImapFlow) => Promise<T>): 
     host: mb.host, port: mb.port, secure: mb.tls,
     auth: { user: mb.user, pass: mb.password }, logger: false,
   });
+  client.on("error", () => undefined);
   await client.connect();
   try {
     const lock = await client.getMailboxLock(mb.folder || "INBOX");

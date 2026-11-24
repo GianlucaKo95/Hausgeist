@@ -117,6 +117,12 @@ async function main() {
 // Ein einzelner Fehler (z. B. eine kurz nicht erreichbare Schnittstelle) darf den Dienst nicht beenden.
 process.on("unhandledRejection", (e) => log.error("Unbehandelter Fehler (Dienst läuft weiter)", e));
 process.on("uncaughtException", (e) => {
+  // Abgebrochene Netzwerkverbindungen (Mailserver, Home Assistant …) sind kein Grund für einen Neustart
+  const msg = `${(e as NodeJS.ErrnoException).code ?? ""} ${e.message}`;
+  if (/Socket timeout|ETIMEDOUT|ECONNRESET|EPIPE|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|socket hang up|Connection not available|NoConnection/i.test(msg)) {
+    log.warn("Netzwerkverbindung abgebrochen (Dienst läuft weiter)", e);
+    return;
+  }
   log.error("Schwerer Fehler – Neustart durch den Watchdog", e);
   setTimeout(() => process.exit(1), 500);
 });
