@@ -56,7 +56,8 @@ const SettingsBody = z.object({
   paperless_url: z.string().optional(),
   paperless_token: z.string().optional(),
   payment_mode: z.enum(["dryrun", "fints"]).optional(),
-  fints_product_id: z.string().max(40).optional(),
+  fints_product_id: z.string().transform((v) => v.replace(/\s+/g, ""))
+    .refine((v) => v === "" || v.length === 25, "Die FinTS-Registrierungsnummer hat genau 25 Zeichen").optional(),
 });
 
 const BankLoginBody = z.object({

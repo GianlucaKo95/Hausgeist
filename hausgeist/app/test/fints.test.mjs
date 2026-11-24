@@ -37,7 +37,7 @@ test("FinTS ohne Produkt-ID oder Bankzugang scheitert verständlich – ohne Ban
   let r = await fints.transfer(order);
   assert.equal(r.status, "failed");
   assert.match(r.error, /Produkt-ID/);
-  cfg.fints_product_id = "ABC123";
+  cfg.fints_product_id = "ABCDEF0123456789ABCDEF012";
   r = await fints.transfer(order);
   assert.match(r.error, /kein Bankzugang/);
 });
@@ -47,7 +47,7 @@ test("Zahlungsmodus wird live umgeschaltet und Bankzugänge bleiben auf dem Pi",
   const store = new SettingsStore(cfg);
   const payments = new SwitchingProvider(cfg, new DryRunProvider(), new FinTSProvider(cfg));
   assert.equal((await payments.transfer(order)).status, "dryrun");
-  await store.update({ payment_mode: "fints", fints_product_id: "ABC123", bank_logins: { dkb: { login: "kunde", pin: "geheim" } } });
+  await store.update({ payment_mode: "fints", fints_product_id: "ABCDEF0123456789ABCDEF012", bank_logins: { dkb: { login: "kunde", pin: "geheim" } } });
   assert.equal(payments.name, "fints");
   const saved = JSON.parse(readFileSync(join(dir, "settings.json"), "utf8"));
   assert.equal(saved.bank_logins.dkb.pin, "geheim");

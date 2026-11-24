@@ -94,8 +94,9 @@ export class FinTSProvider implements PaymentProvider {
   constructor(private readonly config: Config) {}
 
   private client(bank: BankKey, blz: string, override?: { login: string; pin: string; url?: string }) {
-    const productId = this.config.fints_product_id.trim();
+    const productId = this.config.fints_product_id.replace(/\s+/g, "");
     if (!productId) throw new Error("Die FinTS-Produkt-ID fehlt. Bitte in der App unter Verwaltung → Konten eintragen.");
+    if (productId.length !== 25) throw new Error(`Die FinTS-Registrierungsnummer muss genau 25 Zeichen haben (eingetragen: ${productId.length}).`);
     const login = override ?? this.config.bank_logins[bank];
     if (!login) throw new Error(`Für ${BANK_INFO[bank].name} ist noch kein Bankzugang hinterlegt.`);
 
