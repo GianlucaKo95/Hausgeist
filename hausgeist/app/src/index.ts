@@ -27,8 +27,19 @@ async function main() {
   db(config);
   initUploads(config.dataDir);
 
-  const { error } = await db().from("users").select("id", { head: true, count: "exact" });
-  if (error) throw new Error(`Supabase nicht erreichbar oder Schema fehlt: ${error.message}`);
+  // Supabase kann kurz hängen – bis zu 5 Minuten geduldig sein, statt sofort aufzugeben.
+  for (let attempt = 1; ; attempt++) {
+    const { error, status } = await db().from("users").select("id").limit(1);
+    if (!error) break;
+    const reason = error.message || `HTTP ${status}`;
+    const hint = status === 504 || status === 503
+      ? "Supabase-Schnittstelle antwortet nicht (im Supabase-Dashboard Projekt neu starten)"
+      : status === 401 ? "Supabase-Schlüssel falsch (supabase_service_key)"
+      : status === 404 ? "Tabelle fehlt – Migrationen ausführen" : "unbekannt";
+    if (attempt >= 10) throw new Error(`Supabase nicht erreichbar: ${reason} – ${hint}`);
+    log.warn(`Supabase noch nicht bereit (${reason} – ${hint}), Versuch ${attempt}/10 in 30 s`);
+    await new Promise((r) => setTimeout(r, 30_000));
+  }
 
   const ha = new HomeAssistant(config);
   const apns = new ApnsClient(config);

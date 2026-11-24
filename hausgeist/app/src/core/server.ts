@@ -92,7 +92,7 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
         res.end(CHAT_PAGE);
         return;
       }
-      if (path.endsWith("/api/health")) return json(res, 200, { ok: true, version: "0.9.3" });
+      if (path.endsWith("/api/health")) return json(res, 200, { ok: true, version: "0.9.4" });
 
       const user = await resolveUser(req);
       if (!user) return json(res, 401, { error: "Nicht angemeldet oder nicht als Haushaltsmitglied eingetragen." });
