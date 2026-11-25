@@ -176,10 +176,15 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
         await conversations.add(conv, "me", shown);
         // Ältere Gespräche nicht samt aller Werkzeug-Ausgaben fortsetzen (teuer), sondern mit kurzem Textverlauf neu beginnen
         const fresh = conv.updated_at && Date.now() - Date.parse(conv.updated_at) < 20 * 60_000;
+        let streamJob: { id: string } | null = null;
+        const streaming = body.stream === true && body.async === true;
         const work = master.chat(user, message.slice(0, 8000), attachments, {
           id: fresh ? conv.session_id : null,
           save: (sid) => conversations.setSession(conv, sid),
           history: () => conversations.historyText(conv.id),
+        }, {
+          voice: body.voice === true,
+          onText: streaming ? (d) => { if (streamJob) jobs.pushText(streamJob.id, d); } : undefined,
         }).then(
           async (reply) => {
             await conversations.add(conv, "ghost", reply).catch(() => undefined);
@@ -193,6 +198,9 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
         // App: Anfrage als Auftrag – läuft weiter, auch wenn die App in den Hintergrund geht.
         if (body.async === true) {
           const job = jobs.start(user.id, work);
+          streamJob = job;
+          // Sprachchat: sofort die Auftrags-ID, der Text kommt über /stream
+          if (streaming) return json(res, 200, { pending: true, job_id: job.id, conversation_id: conv.id });
           const done = await jobs.wait(job.id, user.id, 25_000);
           if (done && done.status === "done") return json(res, 200, { reply: done.reply, job_id: job.id, conversation_id: conv.id });
           if (done && done.status === "error") return json(res, 500, { error: done.error, job_id: job.id, conversation_id: conv.id });
@@ -276,6 +284,19 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
         const job = await jobs.wait(jobMatch[1], user.id, wait);
         if (!job) return json(res, 404, { error: "Auftrag unbekannt (Hausgeist wurde evtl. neu gestartet)" });
         return json(res, 200, { status: job.status, reply: job.reply ?? null, error: job.error ?? null });
+      }
+      // Sprachchat: Antwort als Ereignisstrom (Server-Sent Events) – Text, sobald er entsteht
+      const sm = path.match(/\/api\/chat\/jobs\/([\w-]{36})\/stream$/);
+      if (req.method === "GET" && sm) {
+        res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive", "X-Accel-Buffering": "no" });
+        const send = (e: unknown) => res.write(`data: ${JSON.stringify(e)}\n\n`);
+        const ping = setInterval(() => res.write(": ping\n\n"), 15_000);
+        let unsub: (() => void) | undefined;
+        const end = () => { clearInterval(ping); unsub?.(); res.end(); };
+        unsub = jobs.subscribe(sm[1], user.id, (e) => { send(e); if (e.t !== "text") end(); });
+        if (!unsub) { send({ t: "error", error: "Auftrag unbekannt" }); end(); }
+        req.on("close", () => { clearInterval(ping); unsub?.(); });
+        return;
       }
       if (req.method === "GET" && path.endsWith("/api/chat/jobs")) {
         return json(res, 200, { jobs: jobs.open(user.id).map((j) => ({ id: j.id, status: j.status })) });

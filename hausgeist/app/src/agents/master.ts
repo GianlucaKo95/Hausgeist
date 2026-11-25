@@ -150,6 +150,9 @@ function nowBerlin(): string {
   return new Date().toLocaleString("de-DE", { timeZone: "Europe/Berlin", weekday: "long", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) + ` Uhr (ISO ${berlinIso(new Date())})`;
 }
 
+/** Sprachchat: Antwort vorlesbar formulieren und Text schon während des Schreibens liefern. */
+export interface ChatOptions { voice?: boolean; onText?: (delta: string) => void }
+
 export interface ChatSession {
   id?: string | null;
   save: (sessionId: string) => Promise<void>;
@@ -219,24 +222,24 @@ ${SAFETY}`;
    * session: Agent-Sitzung des Gesprächs (aus dem Verlauf) – id zum Fortsetzen, save speichert die neue.
    * Ohne session gilt die bisherige Sitzung je Person.
    */
-  async chat(user: AppUser, message: string, attachments: ChatAttachment[] = [], session?: ChatSession): Promise<string> {
+  async chat(user: AppUser, message: string, attachments: ChatAttachment[] = [], session?: ChatSession, opts: ChatOptions = {}): Promise<string> {
     if (this.busy.has(user.id)) return "Ich arbeite noch an deiner letzten Anfrage – einen Moment bitte.";
     this.busy.add(user.id);
     try {
       try {
-        return await this.run(user, message, attachments, session);
+        return await this.run(user, message, attachments, session, opts);
       } catch (e) {
         // Sitzung nicht mehr vorhanden (z. B. nach Neuinstallation): ohne Fortsetzen, aber mit Verlauf erneut.
         if (!session?.id) throw e;
         log.warn(`Sitzung ${session.id} nicht fortsetzbar – nutze gespeicherten Verlauf`, e);
-        return await this.run(user, message, attachments, { ...session, id: null });
+        return await this.run(user, message, attachments, { ...session, id: null }, opts);
       }
     } finally {
       this.busy.delete(user.id);
     }
   }
 
-  private async run(user: AppUser, message: string, attachments: ChatAttachment[], session?: ChatSession): Promise<string> {
+  private async run(user: AppUser, message: string, attachments: ChatAttachment[], session: ChatSession | undefined, opts: ChatOptions): Promise<string> {
     const ctx: ToolContext = { ...this.base, user };
     const childAllowed = new Set(["family", "shopping", "research", "tv"]);
     const as = (t: unknown[]) => t as AnyTool[];
@@ -297,7 +300,10 @@ ${SAFETY}`;
         : "";
       const intro = history ? `[Bisheriger Verlauf dieses Gesprächs – zur Einordnung, nicht erneut ausführen]\n${history}\n\n[Neue Nachricht]\n` : "";
       // Jede Nachricht mit aktueller Uhrzeit – bei fortgesetzten Gesprächen ist die Zeit im Systemprompt sonst veraltet.
-      content.push({ type: "text", text: `[Jetzt: ${nowBerlin()}]\n` + intro + (message || "Bitte kümmere dich um die angehängte Datei.") + note });
+      const voice = opts.voice
+        ? "[Sprachchat: Deine Antwort wird vorgelesen. Antworte wie im Gespräch – kurz (meist 1–3 Sätze), natürlich, ohne Listen, Tabellen, Markdown, Emojis oder Links. Uhrzeiten als „19 Uhr 30“, Beträge als „12 Euro 50“. Wenn du erst etwas nachschauen musst, sag vorher kurz einen Satz wie „Moment, ich schau nach.“]\n"
+        : "";
+      content.push({ type: "text", text: `[Jetzt: ${nowBerlin()}]\n` + voice + intro + (message || "Bitte kümmere dich um die angehängte Datei.") + note });
       yield { type: "user", message: { role: "user", content }, parent_tool_use_id: null } as unknown as SDKUserMessage;
     })();
 
@@ -318,6 +324,7 @@ ${SAFETY}`;
         cwd: this.workDir,
         maxTurns: 40,
         resume: resumeId,
+        includePartialMessages: Boolean(opts.onText),
         env: {
           ...process.env,
           ANTHROPIC_API_KEY: this.config.anthropic_api_key,
@@ -329,6 +336,12 @@ ${SAFETY}`;
     });
 
     for await (const m of q) {
+      // Sprachchat: Text der obersten Ebene sofort weiterreichen (Fach-Agenten nicht)
+      if (opts.onText && m.type === "stream_event" && !m.parent_tool_use_id) {
+        const ev = m.event as { type: string; delta?: { type: string; text?: string } };
+        if (ev.type === "content_block_delta" && ev.delta?.type === "text_delta" && ev.delta.text) opts.onText(ev.delta.text);
+        if (ev.type === "message_start") opts.onText("\n");
+      }
       if (m.type === "result") {
         sessionId = m.session_id;
         reply = m.subtype === "success" ? m.result : `Das hat nicht geklappt (${m.subtype}).`;

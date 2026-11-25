@@ -42,3 +42,20 @@ test("Mail-Überblick: alle Ordner außer Gesendet/Entwürfe/Papierkorb", async 
   assert.equal(skipFolder({ path: "[Gmail]/All Mail", name: "All Mail", special: "\\All" }), true);
   assert.equal(skipFolder({ path: "Papierkorb", name: "Papierkorb", special: "\\Trash" }), true);
 });
+
+test("Sprachchat: Text kommt schon während der Antwort, danach das Ergebnis", async () => {
+  const { ChatJobs } = await import("../dist/core/chat-jobs.js");
+  const jobs = new ChatJobs(async () => undefined, 10);
+  let finish;
+  const job = jobs.start("u1", new Promise((r) => { finish = r; }));
+  const seen = [];
+  jobs.pushText(job.id, "Moment, ");
+  jobs.subscribe(job.id, "u1", (e) => seen.push(e));
+  jobs.pushText(job.id, "ich schau nach.");
+  assert.equal(jobs.subscribe(job.id, "fremd", () => {}), undefined);
+  finish("Fertig.");
+  await new Promise((r) => setTimeout(r, 5));
+  assert.deepEqual(seen.map((e) => e.t), ["text", "text", "done"]);
+  assert.equal(seen[0].d, "Moment, ");
+  assert.equal(seen[2].reply, "Fertig.");
+});

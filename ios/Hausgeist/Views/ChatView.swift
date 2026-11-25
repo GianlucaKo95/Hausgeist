@@ -53,6 +53,7 @@ struct ChatView: View {
 
     @State private var speech = SpeechInput()
     @State private var conversation = false
+    @State private var showVoice = false
     @AppStorage("speakReplies") private var speakReplies = false
 
     var body: some View {
@@ -131,6 +132,9 @@ struct ChatView: View {
             }
             .photosPicker(isPresented: $showPhotos, selection: $photoItems, maxSelectionCount: 5, matching: .images)
             .onChange(of: photoItems) { Task { await loadPhotos() } }
+            .fullScreenCover(isPresented: $showVoice) {
+                VoiceChatView { turns in messages.append(contentsOf: turns) }
+            }
             .fullScreenCover(isPresented: $showScanner) {
                 DocumentScanner(onFinish: { pages in
                     showScanner = false
@@ -149,13 +153,10 @@ struct ChatView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        Task { await toggleConversation() }
-                    } label: {
-                        Label(conversation ? "Gespräch beenden" : "Gesprächsmodus",
-                              systemImage: conversation ? "waveform.circle.fill" : "waveform.circle")
+                    Button { showVoice = true } label: {
+                        Label("Sprachchat", systemImage: "waveform.circle")
                     }
-                    .tint(conversation ? .red : .accentColor)
+                    .disabled(busy)
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button("Verlauf", systemImage: "clock.arrow.circlepath") { showHistory = true }
