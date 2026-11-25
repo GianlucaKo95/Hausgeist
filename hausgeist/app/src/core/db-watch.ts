@@ -25,7 +25,7 @@ export class DbWatch {
   private file: string;
 
   constructor(private config: Config, private notify: (service: string, title: string, msg: string) => Promise<void>) {
-    this.file = join(config.dataDir, "db-watch.json");
+    this.file = join(config.dataDir ?? "/data", "db-watch.json");
     try { if (existsSync(this.file)) this.admins = JSON.parse(readFileSync(this.file, "utf8")) as AppUser[]; } catch { /* egal */ }
   }
 

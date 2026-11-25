@@ -41,7 +41,7 @@ export class ApnsClient {
   private cacheFile: string;
 
   constructor(private readonly config: Config) {
-    this.cacheFile = join(config.dataDir, "push-devices-cache.json");
+    this.cacheFile = join(config.dataDir ?? "/data", "push-devices-cache.json");
     try { if (existsSync(this.cacheFile)) this.tokenCache = new Map(Object.entries(JSON.parse(readFileSync(this.cacheFile, "utf8")))); } catch { /* egal */ }
     if (this.enabled) this.key = createPrivateKey(normalizeP8(config.apns_key));
   }
