@@ -1,3 +1,5 @@
+import type { AlpacaPaper } from "../adapters/alpaca.js";
+import type { IntradayEngine } from "../core/intraday.js";
 import type { Config, MailboxConfig } from "../core/config.js";
 import type { AppUser } from "../core/checks.js";
 import type { HomeAssistant } from "../adapters/homeassistant.js";
@@ -23,6 +25,8 @@ export interface ToolContext {
   pc: WindowsPc;
   positions: Positions;
   tv: TvHub;
+  alpaca: AlpacaPaper;
+  intraday: IntradayEngine;
   /** Einstellungen ändern (wie in der App unter Verwaltung) – nur für Admin-Werkzeuge. */
   saveSettings: (patch: Record<string, unknown>) => Promise<void>;
   finance: FinanceAgent;

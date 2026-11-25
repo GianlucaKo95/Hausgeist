@@ -24,6 +24,8 @@ struct BringListConfig: Codable, Hashable, Identifiable {
 }
 
 struct BringAccountInfo: Codable, Hashable { var email: String; var password_set: Bool }
+struct AlpacaInfo: Codable, Hashable { var key_id: String; var secret_set: Bool }
+struct AlpacaSave: Encodable { var key_id: String; var secret: String? }
 struct BringAccountSave: Encodable { var email: String; var password: String? }
 struct BringRemoteList: Decodable, Hashable, Identifiable { var id: String { listUuid }; let listUuid: String; let name: String }
 
@@ -72,6 +74,7 @@ struct AdminSettings: Codable {
     var bring: BringAccountInfo?
     var mail_check_times: [String]?
     var pcs: [PcConfig]?
+    var alpaca: AlpacaInfo?
 }
 
 struct FritzInfo: Codable, Hashable { var host: String; var user: String; var password_set: Bool }
@@ -134,6 +137,7 @@ struct SettingsPatch: Encodable {
     var bring: BringAccountSave?
     var mail_check_times: [String]?
     var pcs: [PcConfig]?
+    var alpaca: AlpacaSave?
 }
 
 struct Mailbox: Codable, Identifiable, Hashable {

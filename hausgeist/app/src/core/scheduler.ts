@@ -1,3 +1,6 @@
+import { profile, reviewDay } from "./intraday-review.js";
+import type { IntradayEngine } from "./intraday.js";
+import type { AlpacaPaper } from "../adapters/alpaca.js";
 import { loadState, runDay } from "./paper-trading.js";
 import { quoteTool } from "../tools/trading.js";
 import { BANKS } from "./config.js";
@@ -75,6 +78,9 @@ export class Routines {
   private lastAlertCheck = 0;
   private lastTradingCheck = 0;
   private paperRetryAt = 0;
+  private lastIntradayReview = 0;
+  intraday?: IntradayEngine;
+  alpaca?: AlpacaPaper;
   private lastDepartureCheck = 0;
   private readonly travel: Travel;
   private readonly llm: Anthropic;
@@ -153,6 +159,12 @@ export class Routines {
       this.lastTradingCheck = Date.now();
       this.run("musterdepot", () => this.paperTrading(now.date, now.time));
     }
+    // Intraday-Engine: US-Handelszeit liegt in Deutschland zwischen ca. 14:30 und 22:00
+    if (now.weekday >= 1 && now.weekday <= 5 && now.time >= "14:25" && now.time <= "22:05" && this.intraday) this.run("intraday", () => this.intraday!.tick());
+    if (now.weekday >= 1 && now.weekday <= 5 && this.alpaca?.enabled && Date.now() - this.lastIntradayReview >= 60_000) {
+      this.lastIntradayReview = Date.now();
+      this.run("intraday-fazit", () => this.intradayReview(now.date, now.time));
+    }
     if (now.time >= "10:15" && this.once("fints", now.date)) this.run("fints", () => this.fintsActivation(now.date));
     if (now.hour !== this.lastHour) {
       this.lastHour = now.hour;
@@ -176,6 +188,16 @@ export class Routines {
     if (!r) return;
     const admins = (await listUsers()).filter((u) => u.role === "admin");
     await this.notifyUsers(admins, "Musterdepot – Tagesfazit", r.text.slice(0, 1500));
+  }
+
+  private async intradayReview(date: string, time: string): Promise<void> {
+    const p = await profile();
+    if (time < p.report_time || this.lastDaily.intraday === date) return;
+    this.once("intraday", date);
+    const text = await reviewDay(this.config, this.alpaca!, date);
+    if (!text) return;
+    const admins = (await listUsers()).filter((u) => u.role === "admin");
+    await this.notifyUsers(admins, "Intraday – Tagesfazit", text.slice(0, 1500));
   }
 
   private async notifyUsers(users: AppUser[], title: string, message: string): Promise<void> {

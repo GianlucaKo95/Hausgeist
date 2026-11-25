@@ -71,6 +71,7 @@ const SettingsBody = z.object({
   ha_calendars: z.array(z.object({ name: z.string().min(1), entity_id: z.string().regex(/^calendar\.[a-z0-9_]+$/), owner: z.string().default("shared") })).optional(),
   ha_entities: z.array(z.string().min(1)).optional(),
   bring: z.object({ email: z.string().trim().max(120), password: z.string().max(120).optional() }).optional(),
+  alpaca: z.object({ key_id: z.string().trim().max(60).refine((k) => k === "" || k.startsWith("PK"), "Nur Paper-Schlüssel (beginnen mit PK)"), secret: z.string().trim().max(120).optional() }).optional(),
   bring_lists: z.array(z.object({
     name: z.string().min(1).max(40),
     list_uuid: z.string().max(80).optional(),
@@ -205,6 +206,7 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
         calendars: config.calendars, calendar_feeds: config.calendar_feeds, ha_calendars: config.ha_calendars,
         ha_entities: config.ha_entities, energy: config.energy, bring_lists: config.bring_lists,
         bring: { email: config.bring.email, password_set: Boolean(config.bring.password) },
+        alpaca: { key_id: config.alpaca.key_id, secret_set: Boolean(config.alpaca.secret) },
         daily_brief: config.daily_brief, evening_check: config.evening_check, mail_triage: config.mail_triage,
         weekly_offers: config.weekly_offers, calendar_insights: config.calendar_insights, mail_check_times: config.mail_check_times,
         departure_alerts: config.departure_alerts, departure_buffer_min: config.departure_buffer_min, travel_mode: config.travel_mode,
@@ -236,8 +238,9 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
         if (!productId.trim()) throw new HttpError(400, "Für echte Überweisungen zuerst die FinTS-Produkt-ID eintragen.");
         if (!BANKS.some((b) => config.bank_logins[b])) throw new HttpError(400, "Für echte Überweisungen zuerst einen Bankzugang hinterlegen.");
       }
-      const { fritzbox: _f, bring: _b, ...rest } = body;
-      await d.settings.update({ ...rest, ...(fritzbox ? { fritzbox } : {}), ...(bring ? { bring } : {}) });
+      const alpaca = body.alpaca ? { key_id: body.alpaca.key_id, secret: body.alpaca.secret || config.alpaca.secret } : undefined;
+      const { fritzbox: _f, bring: _b, alpaca: _a, ...rest } = body;
+      await d.settings.update({ ...rest, ...(fritzbox ? { fritzbox } : {}), ...(bring ? { bring } : {}), ...(alpaca ? { alpaca } : {}) });
       await audit({ agent: "admin", action: "settings", level: 1, result: Object.keys(body).join(","), user_id: user.id });
       json(res, 200, { ok: true });
       return true;

@@ -1,3 +1,4 @@
+import { intradayTools } from "../tools/intraday.js";
 import { tradingTools } from "../tools/trading.js";
 import { tvTools } from "../tools/tv.js";
 import { berlinIso } from "../core/time.js";
@@ -47,6 +48,7 @@ const SUBAGENTS: Record<string, { description: string; prompt: string; server: s
     prompt: `Du bist der Finance-Agent. Du wertest Rechnungen und Ausgaben aus, verwaltest Budgets und behältst Zahlungsfristen im Blick.
 Überweisungen legst du nur zur Freigabe vor: Rechnungen kommen über den Posteingang, Zahlungen ohne Rechnung mit request_payment, hochgeladene Rechnungen mit process_upload_as_invoice. Ausgeführt wird erst nach Freigabe durch festen Code.
 Konten und Zahlungsempfänger anlegen darf nur der Admin. IBANs bestehender Empfänger änderst du nie.
+Intraday (intraday_*): Alpaca-PAPER-Konto mit mechanischer Engine für US-Aktien. Du formulierst Regeln mit dem Nutzer (Kerzen 1/5/10 Min., Indikatoren), testest sie mit intraday_backtest und schaltest sie nur auf ausdrücklichen Wunsch scharf. Die Engine entscheidet live, nicht du.
 Musterdepot (paper_*): reines Papier-Depot zum Testen einer Strategie – es gibt KEINE echten Orders und keinen Broker; behaupte nie, etwas real gekauft zu haben.
 Strategie-Wünsche des Nutzers („keine Rüstung“, „mehr Dividenden“, „maximal 10 % pro Wert“) arbeitest du mit paper_update_strategy in den vollständigen Strategietext ein. Beurteile Ergebnisse ehrlich im Vergleich zum ETF, inklusive Kosten; keine Renditeversprechen, keine persönliche Anlageberatung.`,
     server: "finance",
@@ -239,7 +241,7 @@ ${SAFETY}`;
     const childAllowed = new Set(["family", "shopping", "research", "tv"]);
     const as = (t: unknown[]) => t as AnyTool[];
     const all: Record<string, AnyTool[]> = {
-      finance: as([...financeTools(ctx), ...(user.role === "admin" ? tradingTools(ctx) : [])]),
+      finance: as([...financeTools(ctx), ...(user.role === "admin" ? [...tradingTools(ctx), ...intradayTools(ctx)] : [])]),
       documents: as([...documentTools(ctx), viewUploadTool(ctx)]),
       shopping: as([...shoppingTools(ctx), viewUploadTool(ctx), reverseImageSearchTool(ctx)]),
       mail: as(mailTools(ctx, "private", "communication")),

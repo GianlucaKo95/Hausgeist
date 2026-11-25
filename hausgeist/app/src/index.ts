@@ -1,3 +1,5 @@
+import { AlpacaPaper } from "./adapters/alpaca.js";
+import { IntradayEngine } from "./core/intraday.js";
 import { FritzBox } from "./adapters/fritzbox.js";
 import { WindowsPc } from "./adapters/pc.js";
 import { Positions } from "./core/location.js";
@@ -79,12 +81,16 @@ async function main() {
   const bring = new BringClient(config);
   const shopping = new ShoppingList(config, ha, bring);
   const positions = new Positions(config.dataDir);
+  const alpaca = new AlpacaPaper(() => config.alpaca);
+  const intraday = new IntradayEngine(alpaca);
   const tv = new TvHub(config.dataDir);
   let settingsRef: SettingsStore | undefined;
   const saveSettings = async (patch: Record<string, unknown>) => { await settingsRef?.update(patch); };
-  const base = { config, ha, calendar, paperless, actions, finance, intake, shopping, fritz, pc, positions, tv, saveSettings };
+  const base = { config, ha, calendar, paperless, actions, finance, intake, shopping, fritz, pc, positions, tv, alpaca, intraday, saveSettings };
   const master = new MasterAgent(config, base);
   const routines = new Routines(config, ha, base, fints);
+  routines.intraday = intraday;
+  routines.alpaca = alpaca;
 
   ha.onNotificationAction((action, haUserId) => {
     (async () => {

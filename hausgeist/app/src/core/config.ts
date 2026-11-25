@@ -53,6 +53,8 @@ export function allPcs(c: { pc: PcConfig; pcs: PcConfig[] }): PcConfig[] {
   return c.pc.host && c.pc.user ? [c.pc] : [];
 }
 
+/** Alpaca – nur Paper-Schlüssel (PK…). */
+const AlpacaKeys = z.object({ key_id: z.string().default(""), secret: z.string().default("") });
 const BringAccount = z.object({ email: z.string().default(""), password: z.string().default("") });
 const BringList = z.object({
   name: z.string().min(1),
@@ -98,6 +100,7 @@ export const Options = z.object({
   ha_entities: z.array(z.string()).default([]),
   bring_lists: z.array(BringList).default([]),
   bring: BringAccount.prefault({}),
+  alpaca: AlpacaKeys.prefault({}),
   fritzbox: FritzBoxCfg.prefault({}),
   pc: PcCfg.prefault({}),
   /** Mehrere Computer (z. B. „PC“ und „Laptop“); pc bleibt für ältere Einstellungen erhalten */
@@ -144,6 +147,7 @@ export const AppSettings = z.object({
   ha_entities: z.array(z.string()),
   bring_lists: z.array(BringList),
   bring: BringAccount,
+  alpaca: AlpacaKeys,
   fritzbox: FritzBoxCfg,
   pc: PcCfg,
   pcs: z.array(PcCfg),
