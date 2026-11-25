@@ -1,12 +1,13 @@
 import SwiftUI
 
-private let banks: [(id: String, name: String)] = [
-    ("sparkasse_duisburg", "Sparkasse Duisburg"),
-    ("deutsche_bank", "Deutsche Bank"),
-    ("dkb", "DKB"),
-]
+/// Hinterlegte Bankzugänge (für Namen und Auswahl) – wird beim Öffnen der Konten geladen.
+@MainActor private var knownBanks: [BankLogin] = []
 
-private func bankName(_ id: String) -> String { banks.first { $0.id == id }?.name ?? id }
+@MainActor private func bankName(_ id: String) -> String {
+    if let b = knownBanks.first(where: { $0.bank == id }) { return b.name }
+    if id.hasPrefix("blz_") { return "BLZ \(id.dropFirst(4))" }
+    return id
+}
 
 private func formatIBAN(_ s: String) -> String {
     let clean = s.replacingOccurrences(of: " ", with: "").uppercased()
@@ -81,6 +82,7 @@ struct AccountsView: View {
     private func load() async {
         let api = APIClient(auth: auth)
         do {
+            knownBanks = (try? await api.adminSettings().banks) ?? knownBanks
             accounts = try await api.accounts()
             payees = try await api.payees()
             people = (try? await api.people()) ?? []
@@ -97,7 +99,7 @@ struct AccountForm: View {
     var onSaved: () async -> Void
 
     @State private var label = ""
-    @State private var bank = "sparkasse_duisburg"
+    @State private var bank = ""
     @State private var iban = ""
     @State private var holder = ""
     @State private var matchNames = ""
@@ -111,7 +113,11 @@ struct AccountForm: View {
                 ErrorBanner(text: error)
                 Section {
                     TextField("Bezeichnung, z. B. Sparkasse Giro", text: $label)
-                    Picker("Bank", selection: $bank) { ForEach(banks, id: \.id) { Text($0.name).tag($0.id) } }
+                    Picker("Bankzugang", selection: $bank) {
+                        Text("Automatisch (aus der IBAN)").tag("")
+                        ForEach(knownBanks) { Text($0.name).tag($0.bank) }
+                        if !bank.isEmpty && !knownBanks.contains(where: { $0.bank == bank }) { Text(bankName(bank)).tag(bank) }
+                    }
                     TextField("IBAN", text: $iban).textInputAutocapitalization(.characters).autocorrectionDisabled()
                     Picker("Inhaber", selection: $holder) {
                         Text("—").tag("")

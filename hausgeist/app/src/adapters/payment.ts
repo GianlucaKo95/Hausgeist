@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import type * as Fints from "fints-lib";
 import type { BankKey, Config } from "../core/config.js";
+import { bankInfo } from "../core/banks.js";
 import { logger } from "../core/log.js";
 
 const log = logger("payment");
@@ -42,13 +43,6 @@ export class DryRunProvider implements PaymentProvider {
   }
 }
 
-/** FinTS-Server der drei Banken (Quelle: Institutsverzeichnis der Deutschen Kreditwirtschaft). */
-export const BANK_INFO: Record<BankKey, { name: string; url: string }> = {
-  sparkasse_duisburg: { name: "Sparkasse Duisburg", url: "https://banking-rl4.s-fints-pt-rl.de/fints30" },
-  deutsche_bank: { name: "Deutsche Bank", url: "https://fints.deutsche-bank.de/" },
-  dkb: { name: "DKB", url: "https://fints.dkb.de/fints" },
-};
-
 /** Bankleitzahl aus einer deutschen IBAN (Stellen 5–12). */
 export function blzFromIban(iban: string): string {
   const clean = iban.replace(/\s+/g, "").toUpperCase();
@@ -84,7 +78,7 @@ const NO_DECOUPLED =
   "Die Bank verlangt eine TAN zum Abtippen. Bitte stell im Online-Banking die App-Freigabe (S-pushTAN, BestSign oder DKB-App) als TAN-Verfahren ein.";
 
 /**
- * Überweisungen per FinTS 3.0 (Sparkasse Duisburg, Deutsche Bank, DKB).
+ * Überweisungen per FinTS 3.0 – jede deutsche Bank mit PIN/TAN-Zugang.
  * Freigabe läuft immer über die Banking-App der Bank (Decoupled TAN) –
  * der Hausgeist sieht und speichert niemals eine TAN.
  */
@@ -98,7 +92,10 @@ export class FinTSProvider implements PaymentProvider {
     if (!productId) throw new Error("Die FinTS-Produkt-ID fehlt. Bitte in der App unter Verwaltung → Konten eintragen.");
     if (productId.length !== 25) throw new Error(`Die FinTS-Registrierungsnummer muss genau 25 Zeichen haben (eingetragen: ${productId.length}).`);
     const login = override ?? this.config.bank_logins[bank];
-    if (!login) throw new Error(`Für ${BANK_INFO[bank].name} ist noch kein Bankzugang hinterlegt.`);
+    const info = bankInfo(this.config, bank);
+    if (!login) throw new Error(`Für ${info.name} ist noch kein Bankzugang hinterlegt.`);
+    const url = login.url || info.url;
+    if (!url) throw new Error(`Für ${info.name} ist keine FinTS-Adresse bekannt – bitte im Bankzugang eintragen.`);
 
     const state = { tanMethods: [] as string[] };
     // Nach jedem Dialogaufbau die App-Freigabe nach vorn sortieren.
@@ -119,7 +116,7 @@ export class FinTSProvider implements PaymentProvider {
       }
     }
     const client = new Client({
-      url: login.url || BANK_INFO[bank].url,
+      url,
       blz,
       name: login.login,
       pin: login.pin,
@@ -178,7 +175,7 @@ export class FinTSProvider implements PaymentProvider {
       if (e instanceof fints.PinError) return "pin";
       const msg = e instanceof Error ? e.message : String(e);
       if (/9078|nicht registriert/i.test(msg)) return "pending";
-      log.warn(`FinTS-Prüfung ${BANK_INFO[bank].name}: ${msg}`);
+      log.warn(`FinTS-Prüfung ${bankInfo(this.config, bank).name}: ${msg}`);
       return "error";
     }
   }

@@ -8,6 +8,7 @@ struct OnlineBankingSection: View {
     @State private var live = false
     @State private var confirmLive = false
     @State private var editing: BankLogin?
+    @State private var adding = false
     @State private var error: String?
 
     var body: some View {
@@ -33,6 +34,7 @@ struct OnlineBankingSection: View {
                     }
                     .buttonStyle(.plain)
                 }
+                Button("Bank hinzufügen", systemImage: "plus") { adding = true }
                 Toggle("Echte Überweisungen", isOn: Binding(
                     get: { live },
                     set: { on in
@@ -46,11 +48,17 @@ struct OnlineBankingSection: View {
         } header: {
             Text("Online-Banking (FinTS)")
         } footer: {
-            Text("Zugangsdaten und PIN bleiben auf dem Pi. Freigegeben wird jede Überweisung zusätzlich in der Banking-App (S-pushTAN, BestSign, DKB-App) – der Hausgeist sieht nie eine TAN. Solange „Echte Überweisungen“ aus ist, läuft alles im Testmodus.")
+            Text("Jede deutsche Bank mit Online-Banking (FinTS) lässt sich hinzufügen. Zugangsdaten und PIN bleiben auf dem Pi. Freigegeben wird jede Überweisung zusätzlich in der Banking-App der Bank – der Hausgeist sieht nie eine TAN. Solange „Echte Überweisungen“ aus ist, läuft alles im Testmodus.")
         }
         .task { await load() }
         .sheet(item: $editing) { b in
-            BankLoginForm(bank: b, productId: productId) { await load() }
+            BankLoginForm(bank: b, productId: productId, isNew: !(settings?.banks ?? []).contains { $0.bank == b.bank }) { await load() }
+        }
+        .sheet(isPresented: $adding) {
+            BankSearchView { picked in
+                adding = false
+                editing = BankLogin(bank: "blz_\(picked.blz)", name: picked.name, default_url: picked.url, login: "", url: "", pin_set: false, blz: picked.blz)
+            }
         }
         .alert("Echte Überweisungen einschalten?", isPresented: $confirmLive) {
             Button("Einschalten", role: .destructive) { Task { await setLive(true) } }
@@ -94,6 +102,7 @@ struct BankLoginForm: View {
     @Environment(\.dismiss) private var dismiss
     let bank: BankLogin
     let productId: String
+    var isNew = false
     var onSaved: () async -> Void
 
     @State private var login = ""
@@ -105,16 +114,18 @@ struct BankLoginForm: View {
     @State private var error: String?
 
     private var hint: String {
-        switch bank.bank {
-        case "sparkasse_duisburg": return "Anmeldename oder Legitimations-ID aus dem Online-Banking."
-        case "deutsche_bank": return "Filiale + Kontonummer + Unterkonto (z. B. 3501234567 00) bzw. dein Login-Name."
-        default: return "Dein DKB-Anmeldename."
-        }
+        let n = bank.name.lowercased()
+        if n.contains("sparkasse") { return "Anmeldename oder Legitimations-ID aus dem Online-Banking." }
+        if n.contains("deutsche bank") { return "Filiale + Kontonummer + Unterkonto (z. B. 3501234567 00) bzw. dein Login-Name." }
+        if n.contains("volksbank") || n.contains("raiffeisen") { return "VR-NetKey oder Alias aus dem Online-Banking." }
+        if n.contains("comdirect") || n.contains("commerzbank") { return "Teilnehmernummer bzw. Zugangsnummer." }
+        return "Der Anmeldename, mit dem du dich im Online-Banking anmeldest."
     }
 
     private var payload: BankLoginSave {
         BankLoginSave(login: login.trimmingCharacters(in: .whitespaces), pin: pin.isEmpty ? nil : pin,
-                      url: url.isEmpty ? nil : url, fints_product_id: productId.isEmpty ? nil : productId)
+                      url: url.isEmpty ? nil : url, fints_product_id: productId.isEmpty ? nil : productId,
+                      name: bank.name, blz: bank.blz)
     }
 
     var body: some View {
@@ -156,7 +167,7 @@ struct BankLoginForm: View {
                         .font(.callout)
                 }
 
-                if !bank.login.isEmpty {
+                if !isNew {
                     Section {
                         Button("Bankzugang entfernen", role: .destructive) { Task { await remove() } }
                     }
@@ -192,7 +203,8 @@ struct BankLoginForm: View {
     private func save() async {
         busy = true; defer { busy = false }
         do {
-            try await APIClient(auth: auth).saveBankLogin(bank: bank.bank, payload)
+            if isNew { try await APIClient(auth: auth).createBankLogin(payload) }
+            else { try await APIClient(auth: auth).saveBankLogin(bank: bank.bank, payload) }
             await onSaved()
             dismiss()
         } catch { self.error = error.localizedDescription }
@@ -204,5 +216,48 @@ struct BankLoginForm: View {
             await onSaved()
             dismiss()
         } catch { self.error = error.localizedDescription }
+    }
+}
+
+
+/// Bank suchen: Name, Ort, Bankleitzahl oder einfach die IBAN eintippen.
+struct BankSearchView: View {
+    @Environment(AuthService.self) private var auth
+    @Environment(\.dismiss) private var dismiss
+    var onPick: (DirectoryBank) -> Void
+    @State private var query = ""
+    @State private var results: [DirectoryBank] = []
+    @State private var searching = false
+    @State private var error: String?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ErrorBanner(text: error)
+                ForEach(results) { b in
+                    Button { onPick(b) } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(b.name).foregroundStyle(.primary)
+                            Text("\(b.location) · BLZ \(b.blz)").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                if !searching && results.isEmpty && query.count >= 2 {
+                    Text("Keine Bank mit Online-Banking-Zugang (FinTS) gefunden.").foregroundStyle(.secondary)
+                }
+            }
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Name, Ort, Bankleitzahl oder IBAN")
+            .task(id: query) {
+                guard query.trimmingCharacters(in: .whitespaces).count >= 2 else { results = []; return }
+                try? await Task.sleep(for: .milliseconds(300))
+                if Task.isCancelled { return }
+                searching = true; defer { searching = false }
+                do { results = try await APIClient(auth: auth).searchBanks(query); error = nil }
+                catch { self.error = error.localizedDescription }
+            }
+            .navigationTitle("Bank hinzufügen")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() } } }
+        }
     }
 }

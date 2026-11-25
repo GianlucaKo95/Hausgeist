@@ -1,3 +1,4 @@
+import { keyForBlz, loginForIban } from "../core/banks.js";
 import { tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { db } from "../core/db.js";
@@ -93,7 +94,7 @@ export function financeTools(ctx: ToolContext) {
 
     tool("add_account", "Eigenes Bankkonto anlegen (nur Admin).", {
       label: z.string().describe("z. B. Sparkasse Giro"),
-      bank: z.enum(["sparkasse_duisburg", "deutsche_bank", "dkb"]),
+      bank: z.string().optional().describe("Bankzugang (Schlüssel) – leer lassen, wird aus der IBAN bestimmt"),
       iban: z.string(),
       holder: z.string().optional().describe("Name des Inhabers aus dem Haushalt"),
       match_names: z.array(z.string()).default([]).describe("Namen auf Rechnungen, die von diesem Konto bezahlt werden"),
@@ -108,7 +109,7 @@ export function financeTools(ctx: ToolContext) {
       }
       if (a.is_default) await db().from("accounts").update({ is_default: false }).eq("is_default", true);
       const { error } = await db().from("accounts").insert({
-        label: a.label, bank: a.bank, iban: normalizeIban(a.iban), holder_id: holder, match_names: a.match_names, is_default: a.is_default,
+        label: a.label, bank: a.bank || loginForIban(ctx.config, a.iban) || keyForBlz(normalizeIban(a.iban).slice(4, 12)), iban: normalizeIban(a.iban), holder_id: holder, match_names: a.match_names, is_default: a.is_default,
       });
       if (error) throw error;
       return ok(`Konto ${a.label} angelegt`);

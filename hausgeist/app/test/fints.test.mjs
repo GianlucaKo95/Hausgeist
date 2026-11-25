@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { blzFromIban, preferDecoupled, FinTSProvider, SwitchingProvider, DryRunProvider, BANK_INFO } from "../dist/adapters/payment.js";
+import { blzFromIban, preferDecoupled, FinTSProvider, SwitchingProvider, DryRunProvider } from "../dist/adapters/payment.js";
 import { loadConfig } from "../dist/core/config.js";
 import { SettingsStore } from "../dist/core/settings.js";
 
@@ -52,5 +52,17 @@ test("Zahlungsmodus wird live umgeschaltet und Bankzugänge bleiben auf dem Pi",
   const saved = JSON.parse(readFileSync(join(dir, "settings.json"), "utf8"));
   assert.equal(saved.bank_logins.dkb.pin, "geheim");
   assert.equal(cfg.daily_brief, "07:30", "andere Einstellungen bleiben unverändert");
-  assert.ok(BANK_INFO.sparkasse_duisburg.url.startsWith("https://"));
+  const { bankInfo } = await import("../dist/core/banks.js");
+  assert.equal(bankInfo(cfg, "dkb").name, "DKB", "alte Schlüssel laufen weiter");
+});
+
+test("Jede Bank: Verzeichnis, Suche und Zuordnung per IBAN", async () => {
+  const { bankByBlz, searchBanks, loginForIban, bankInfo, keyForBlz } = await import("../dist/core/banks.js");
+  assert.equal(bankByBlz("35050000").name, "Sparkasse Duisburg");
+  assert.ok(searchBanks("Volksbank").length > 0);
+  assert.ok(searchBanks("3505").some((b) => b.blz === "35050000"));
+  const cfg = { bank_logins: { [keyForBlz("35050000")]: { login: "x", pin: "y", blz: "35050000" } } };
+  assert.equal(loginForIban(cfg, "DE89 3505 0000 0123 4567 89"), "blz_35050000");
+  assert.equal(bankInfo(cfg, "blz_35050000").url, "https://banking-rl4.s-fints-pt-rl.de/fints30");
+  assert.equal(loginForIban(cfg, "DE02120300000000202051"), null);
 });

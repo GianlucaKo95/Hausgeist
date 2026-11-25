@@ -6,9 +6,9 @@ import type { IntradayEngine } from "./intraday.js";
 import type { AlpacaPaper } from "../adapters/alpaca.js";
 import { loadState, runDay } from "./paper-trading.js";
 import { quoteTool } from "../tools/trading.js";
-import { BANKS } from "./config.js";
+import { bankInfo } from "./banks.js";
 import { Travel, whereIs, zoneEdge, leaveAt } from "./location.js";
-import { BANK_INFO, blzFromIban, type FinTSProvider } from "../adapters/payment.js";
+import { blzFromIban, type FinTSProvider } from "../adapters/payment.js";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Config } from "./config.js";
@@ -231,16 +231,16 @@ export class Routines {
     let status: Record<string, { state: string; since: string }> = {};
     try { status = JSON.parse(readFileSync(file, "utf8")); } catch { /* erste Prüfung */ }
     const admins = (await listUsers()).filter((u) => u.role === "admin" && u.notify_service);
-    for (const bank of BANKS) {
-      if (!this.config.bank_logins[bank]) continue;
+    for (const bank of Object.keys(this.config.bank_logins)) {
       const prev = status[bank]?.state;
       if (prev === "active" || prev === "pin") continue; // erledigt bzw. erst nach neuer PIN wieder prüfen
       const { data: acc } = await db().from("accounts").select("iban").eq("bank", bank).limit(1);
-      if (!acc?.[0]) continue;
-      const state = await this.fints.probe(bank, blzFromIban(acc[0].iban));
+      const blz = acc?.[0] ? blzFromIban(acc[0].iban) : bankInfo(this.config, bank).blz;
+      if (!blz) continue;
+      const state = await this.fints.probe(bank, blz);
       if (state === prev) continue;
       status[bank] = { state, since: today };
-      const name = BANK_INFO[bank].name;
+      const name = bankInfo(this.config, bank).name;
       if (state === "active") {
         await this.notifyUsers(admins, `${name} ist freigeschaltet`, "Die Bank kennt jetzt die Registrierungsnummer des Hausgeists. Überweisungen über dieses Konto sind möglich.");
       } else if (state === "pin") {

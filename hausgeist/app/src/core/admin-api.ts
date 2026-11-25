@@ -4,12 +4,13 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { ImapFlow } from "imapflow";
 import nodemailer from "nodemailer";
 import { z } from "zod";
-import { allPcs, BANKS, type BankKey, type Config, type MailboxConfig } from "./config.js";
+import { allPcs, BANK_KEY, type BankKey, type Config, type MailboxConfig } from "./config.js";
+import { bankByBlz, bankInfo, keyForBlz, loginForIban, searchBanks } from "./banks.js";
 import type { FritzBox } from "../adapters/fritzbox.js";
 import type { BringClient } from "../adapters/bring.js";
 import { detectFromHa } from "./energy-detect.js";
 import { discoverComputers, type WindowsPc } from "../adapters/pc.js";
-import { BANK_INFO, blzFromIban, type FinTSProvider } from "../adapters/payment.js";
+import { blzFromIban, type FinTSProvider } from "../adapters/payment.js";
 import type { SettingsStore } from "./settings.js";
 import { isValidIban, normalizeIban, type AppUser } from "./checks.js";
 import { db, audit, listUsers } from "./db.js";
@@ -99,6 +100,8 @@ const BankLoginBody = z.object({
   login: z.string().min(1).max(60),
   pin: z.string().max(60).optional(),
   url: z.string().url().or(z.literal("")).optional(),
+  name: z.string().max(80).optional(),
+  blz: z.string().regex(/^\d{8}$/).optional(),
 });
 
 const MailboxBody = z.object({
@@ -127,7 +130,7 @@ const UserBody = z.object({
 
 const AccountBody = z.object({
   label: z.string().min(1),
-  bank: z.enum(["sparkasse_duisburg", "deutsche_bank", "dkb"]),
+  bank: z.string().regex(BANK_KEY).or(z.literal("")).optional(),
   iban: z.string(),
   holder_id: z.string().uuid().nullable().optional(),
   match_names: z.array(z.string()).default([]),
@@ -215,11 +218,16 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
         payment_mode: config.payment_mode, fints_product_id: config.fints_product_id,
         fritzbox: { host: config.fritzbox.host, user: config.fritzbox.user, password_set: Boolean(config.fritzbox.password) },
         pc: config.pc, pcs: allPcs(config), pc_public_key: d.pc.keyPair().publicKey,
-        banks: BANKS.map((b) => ({
-          bank: b, name: BANK_INFO[b].name, default_url: BANK_INFO[b].url,
-          login: config.bank_logins[b]?.login ?? "", url: config.bank_logins[b]?.url ?? "",
-          pin_set: Boolean(config.bank_logins[b]?.pin),
-        })),
+        // Nur tatsächlich hinterlegte Zugänge – jede deutsche Bank lässt sich hinzufügen
+        banks: Object.keys(config.bank_logins).map((b) => {
+          const info = bankInfo(config, b);
+          const dir = info.blz ? bankByBlz(info.blz) : null;
+          return {
+            bank: b, name: info.name, default_url: dir?.url ?? info.url, blz: info.blz,
+            login: config.bank_logins[b]?.login ?? "", url: config.bank_logins[b]?.url ?? "",
+            pin_set: Boolean(config.bank_logins[b]?.pin),
+          };
+        }),
       });
       return true;
     }
@@ -236,7 +244,7 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
       if (body.payment_mode === "fints") {
         const productId = body.fints_product_id ?? config.fints_product_id;
         if (!productId.trim()) throw new HttpError(400, "Für echte Überweisungen zuerst die FinTS-Produkt-ID eintragen.");
-        if (!BANKS.some((b) => config.bank_logins[b])) throw new HttpError(400, "Für echte Überweisungen zuerst einen Bankzugang hinterlegen.");
+        if (!Object.keys(config.bank_logins).length) throw new HttpError(400, "Für echte Überweisungen zuerst einen Bankzugang hinterlegen.");
       }
       const alpaca = body.alpaca ? { key_id: body.alpaca.key_id, secret: body.alpaca.secret || config.alpaca.secret } : undefined;
       const { fritzbox: _f, bring: _b, alpaca: _a, ...rest } = body;
@@ -386,7 +394,9 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
       const b = AccountBody.parse(await d.readBody(req));
       if (!isValidIban(b.iban)) throw new HttpError(400, "IBAN ist ungültig");
       if (b.is_default) await db().from("accounts").update({ is_default: false }).eq("is_default", true);
-      const row = { ...b, iban: normalizeIban(b.iban), holder_id: b.holder_id ?? null };
+      const iban = normalizeIban(b.iban);
+      // Bankzugang aus der IBAN bestimmen, wenn keiner gewählt ist
+      const row = { ...b, bank: b.bank || loginForIban(config, iban) || keyForBlz(iban.slice(4, 12)), iban, holder_id: b.holder_id ?? null };
       const q = accRoute[1] ? db().from("accounts").update(row).eq("id", accRoute[1]) : db().from("accounts").insert(row);
       const { error } = await q;
       if (error) throw new HttpError(400, error.message);
@@ -435,14 +445,41 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
 
     // ── Home Assistant ───────────────────────────────────────────────────
     // ── Bankzugänge (FinTS) ──────────────────────────────────────────────
-    const bankRoute = route.match(/^banks\/(sparkasse_duisburg|deutsche_bank|dkb)$/);
+    // Bank im Verzeichnis suchen (Name, Ort, BIC, Bankleitzahl) oder per IBAN bestimmen
+    if (route === "banks/search" && method === "GET") {
+      requireAdmin(user);
+      const q = new URL(req.url ?? "", "http://x").searchParams.get("q") ?? "";
+      const iban = q.replace(/\s+/g, "").toUpperCase();
+      if (/^DE\d{20}$/.test(iban)) {
+        const b = bankByBlz(iban.slice(4, 12));
+        json(res, 200, { banks: b ? [b] : [], configured: loginForIban(config, iban) });
+      } else json(res, 200, { banks: searchBanks(q) });
+      return true;
+    }
+    // Neuen Bankzugang anlegen (Schlüssel aus der Bankleitzahl)
+    if (route === "banks" && method === "POST") {
+      requireAdmin(user);
+      const body = BankLoginBody.extend({ blz: z.string().regex(/^\d{8}$/) }).parse(await d.readBody(req));
+      const dir = bankByBlz(body.blz);
+      if (!dir && !body.url) throw new HttpError(400, "Für diese Bankleitzahl ist keine FinTS-Adresse bekannt – bitte die Adresse der Bank angeben.");
+      if (!body.pin) throw new HttpError(400, "Bitte die PIN eingeben.");
+      const key = keyForBlz(body.blz);
+      const next = { ...config.bank_logins, [key]: { login: body.login, pin: body.pin, blz: body.blz, name: body.name || dir?.name, ...(body.url ? { url: body.url } : {}) } };
+      await d.settings.update({ bank_logins: next });
+      resetFintsStatus(config.dataDir, key);
+      await audit({ agent: "admin", action: "bank_login", level: 1, result: key, user_id: user.id });
+      json(res, 200, { ok: true, bank: key });
+      return true;
+    }
+    const bankRoute = route.match(/^banks\/([a-z0-9_]{2,40})$/);
     if (bankRoute && method === "PUT") {
       requireAdmin(user);
       const bank = bankRoute[1] as BankKey;
       const body = BankLoginBody.parse(await d.readBody(req));
       const pin = body.pin || config.bank_logins[bank]?.pin;
       if (!pin) throw new HttpError(400, "Bitte die PIN eingeben.");
-      const next = { ...config.bank_logins, [bank]: { login: body.login, pin, ...(body.url ? { url: body.url } : {}) } };
+      const prev = config.bank_logins[bank];
+      const next = { ...config.bank_logins, [bank]: { ...prev, login: body.login, pin, ...(body.name ? { name: body.name } : {}), ...(body.blz ? { blz: body.blz } : {}), url: body.url || undefined } };
       await d.settings.update({ bank_logins: next });
       resetFintsStatus(config.dataDir, bank);
       await audit({ agent: "admin", action: "bank_login", level: 1, result: bank, user_id: user.id });
@@ -459,7 +496,7 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
       json(res, 200, { ok: true });
       return true;
     }
-    const bankTest = route.match(/^banks\/(sparkasse_duisburg|deutsche_bank|dkb)\/test$/);
+    const bankTest = route.match(/^banks\/([a-z0-9_]{2,40})\/test$/);
     if (bankTest && method === "POST") {
       requireAdmin(user);
       const bank = bankTest[1] as BankKey;
@@ -474,14 +511,15 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
         const { data: acc } = await db().from("accounts").select("iban").eq("bank", bank).limit(1);
         if (acc?.[0]) blz = blzFromIban(acc[0].iban);
       }
-      if (!blz) throw new HttpError(400, "Bitte zuerst ein Konto dieser Bank anlegen (für die Bankleitzahl).");
+      blz ??= bankInfo(config, bank).blz ?? undefined;
+      if (!blz) throw new HttpError(400, "Bankleitzahl unbekannt – bitte ein Konto dieser Bank anlegen.");
       const productBefore = config.fints_product_id;
       if (body.fints_product_id) config.fints_product_id = body.fints_product_id;
       try {
         const me = (await listUsers()).find((u) => u.id === user.id);
         const result = await d.fints.test(bank, blz, { login, pin, url: body.url || saved?.url }, {
           onBankApproval: async (text) => {
-            if (me?.notify_service) await d.ha.notify(me.notify_service, "Banking-App öffnen", `${BANK_INFO[bank].name}: ${text}`);
+            if (me?.notify_service) await d.ha.notify(me.notify_service, "Banking-App öffnen", `${bankInfo(config, bank).name}: ${text}`);
           },
         });
         json(res, 200, result);

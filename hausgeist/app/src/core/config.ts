@@ -18,19 +18,18 @@ const Calendar = z.object({ name: z.string(), owner: z.string() });
 const CalendarFeed = z.object({ name: z.string(), url: z.string(), owner: z.string().default("shared") });
 const HaCalendar = z.object({ name: z.string(), entity_id: z.string().regex(/^calendar\.[a-z0-9_]+$/), owner: z.string().default("shared") });
 
-export const BANKS = ["sparkasse_duisburg", "deutsche_bank", "dkb"] as const;
-export type BankKey = (typeof BANKS)[number];
+/** Schlüssel eines Bankzugangs: „blz_12345678“ (neu) oder die alten festen Namen. */
+export type BankKey = string;
+export const BANK_KEY = /^[a-z0-9_]{2,40}$/;
 const BankLogin = z.object({
   login: z.string().min(1),
   pin: z.string().min(1),
   url: z.string().url().optional(),
+  name: z.string().max(80).optional(),
+  blz: z.string().regex(/^\d{8}$/).optional(),
 });
 export type BankLoginConfig = z.infer<typeof BankLogin>;
-const BankLogins = z.object({
-  sparkasse_duisburg: BankLogin.optional(),
-  deutsche_bank: BankLogin.optional(),
-  dkb: BankLogin.optional(),
-});
+const BankLogins = z.record(z.string().regex(BANK_KEY), BankLogin);
 
 const FritzBoxCfg = z.object({
   host: z.string().default("fritz.box"),

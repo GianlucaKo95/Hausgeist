@@ -95,6 +95,7 @@ struct BankLogin: Codable, Identifiable, Hashable {
     var login: String
     var url: String
     var pin_set: Bool
+    var blz: String? = nil
 }
 
 struct BankLoginSave: Encodable {
@@ -102,6 +103,18 @@ struct BankLoginSave: Encodable {
     var pin: String?
     var url: String?
     var fints_product_id: String?
+    var name: String? = nil
+    var blz: String? = nil
+}
+
+/// Eintrag aus dem Institutsverzeichnis (jede deutsche Bank mit FinTS).
+struct DirectoryBank: Decodable, Identifiable, Hashable {
+    var id: String { blz }
+    let blz: String
+    let name: String
+    let bic: String
+    let url: String
+    let location: String
 }
 
 struct BankTestResult: Decodable {
@@ -280,6 +293,21 @@ extension APIClient {
     func saveBankLogin(bank: String, _ b: BankLoginSave) async throws {
         if AppConfig.isDemo { return }
         let _: OK = try await request("api/admin/banks/\(bank)", method: "PUT", body: b)
+    }
+
+    /// Neuen Bankzugang anlegen (beliebige Bank, über die Bankleitzahl).
+    func createBankLogin(_ b: BankLoginSave) async throws {
+        if AppConfig.isDemo { return }
+        let _: OK = try await request("api/admin/banks", method: "POST", body: b)
+    }
+
+    /// Bank im Verzeichnis suchen: Name, Ort, BIC, Bankleitzahl oder IBAN.
+    func searchBanks(_ q: String) async throws -> [DirectoryBank] {
+        if AppConfig.isDemo { return [DirectoryBank(blz: "35050000", name: "Sparkasse Duisburg", bic: "DUISDE33XXX", url: "https://banking-rl4.s-fints-pt-rl.de/fints30", location: "Duisburg")] }
+        struct R: Decodable { let banks: [DirectoryBank] }
+        let enc = q.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? q
+        let r: R = try await request("api/admin/banks/search?q=\(enc)")
+        return r.banks
     }
 
     func deleteBankLogin(bank: String) async throws {
