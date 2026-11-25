@@ -1,7 +1,7 @@
 import { listFolders, listMails, type FolderInfo } from "../adapters/mail.js";
 import { visibleMailboxes } from "../tools/context.js";
 import type { DbWatch } from "./db-watch.js";
-import { profile, reviewDay } from "./intraday-review.js";
+import { designStrategy, profile, reviewDay } from "./intraday-review.js";
 import type { IntradayEngine } from "./intraday.js";
 import type { AlpacaPaper } from "../adapters/alpaca.js";
 import { loadState, runDay } from "./paper-trading.js";
@@ -207,6 +207,15 @@ export class Routines {
 
   private async intradayReview(date: string, time: string): Promise<void> {
     const p = await profile();
+    // Morgens vor US-Börsenstart: ohne aktive Strategie entwirft der Agent selbst eine
+    if (p.autopilot && time >= "14:40" && time < "15:25" && this.lastDaily.intradayDesign !== date) {
+      this.once("intradayDesign", date);
+      const t = await designStrategy(this.config, this.alpaca!);
+      if (t) {
+        const admins = (await listUsers()).filter((u) => u.role === "admin");
+        await this.notifyUsers(admins, "Intraday – Strategie für heute", t.slice(0, 1500));
+      }
+    }
     if (time < p.report_time || this.lastDaily.intraday === date) return;
     this.once("intraday", date);
     const text = await reviewDay(this.config, this.alpaca!, date);

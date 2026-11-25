@@ -2,7 +2,7 @@ import { tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { db } from "../core/db.js";
 import { activeRules, backtest, describe, Rules, type ExprT, type RulesT } from "../core/intraday.js";
-import { profile, reviewDay } from "../core/intraday-review.js";
+import { designStrategy, profile, reviewDay } from "../core/intraday-review.js";
 import { ok, requireAdmin, safe, type ToolContext } from "./context.js";
 
 function words(r: RulesT): string {
@@ -34,6 +34,7 @@ export function intradayTools(ctx: ToolContext) {
         aktive_regel: active ? { version: active.version, in_worten: words(active.rules) } : "keine – Engine handelt nicht",
         vorschlag: prop ? { version: prop.version, notiz: prop.note, in_worten: Rules.safeParse(prop.rules).success ? words(Rules.parse(prop.rules)) : "?" } : null,
         wuensche: (await profile()).goals,
+        autopilot: (await profile()).autopilot,
       });
     })),
 
@@ -79,6 +80,25 @@ export function intradayTools(ctx: ToolContext) {
       const cur = await profile();
       await db().from("intraday_profile").upsert({ id: 1, goals: a.goals ?? cur.goals, report_time: a.report_time ?? cur.report_time, updated_at: new Date().toISOString() });
       return ok("Gespeichert.");
+    })),
+
+    tool("intraday_autopilot", "Autopilot an/aus: Der Strategie-Agent entwirft selbst Strategien, testet sie je einen Handelstag auf dem Paper-Konto und passt sie abends selbst an (nur Spielgeld). Aus = er macht nur Vorschläge.", {
+      on: z.boolean(),
+    }, safe(async (a) => {
+      requireAdmin(ctx);
+      await db().from("intraday_profile").upsert({ id: 1, autopilot: a.on, updated_at: new Date().toISOString() });
+      return ok(a.on ? "Autopilot an – der Strategie-Agent entwickelt und testet selbstständig." : "Autopilot aus – Änderungen kommen nur noch als Vorschlag.");
+    })),
+
+    tool("intraday_design_now", "Strategie-Agent soll JETZT selbst eine (neue) Strategie entwerfen und – im Autopilot – sofort aktiv schalten. Für „Leg los“, „Denk dir was aus“, „Probier was Neues“.", {}, safe(async () => {
+      requireAdmin(ctx);
+      return ok(await designStrategy(ctx.config, alpaca, true) ?? "Keine Strategie entworfen.");
+    })),
+
+    tool("intraday_lessons", "Was der Strategie-Agent bisher gelernt hat (seine Lehren).", {}, safe(async () => {
+      requireAdmin(ctx);
+      const p = await profile();
+      return ok({ lehren: p.lessons || "noch keine", autopilot: p.autopilot, wuensche: p.goals });
     })),
 
     tool("intraday_engine", "Engine pausieren/fortsetzen oder sofort alle Positionen glattstellen (Paper).", {

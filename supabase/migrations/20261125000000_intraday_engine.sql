@@ -41,3 +41,8 @@ create table public.intraday_profile (
   updated_at timestamptz not null default now()
 );
 alter table public.intraday_profile enable row level security;
+
+-- Autopilot: Strategie-Agent entwirft, testet einen Tag auf Papier und passt selbst an
+alter table public.intraday_profile add column if not exists lessons text not null default '';
+alter table public.intraday_profile add column if not exists autopilot boolean not null default true;
+insert into public.intraday_profile (id) values (1) on conflict (id) do nothing;
