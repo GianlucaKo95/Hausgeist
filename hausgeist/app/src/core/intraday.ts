@@ -85,68 +85,113 @@ export function aggregate(bars: Bar[], minutes: number, nowMs: number): Bar[] {
   return out;
 }
 
-function sma(xs: number[], n: number): number | null { if (xs.length < n) return null; let s = 0; for (let i = xs.length - n; i < xs.length; i++) s += xs[i]; return s / n; }
-function ema(xs: number[], n: number): number | null {
-  if (xs.length < n) return null;
-  const k = 2 / (n + 1);
-  let e = xs.slice(0, n).reduce((a, b) => a + b, 0) / n;
-  for (let i = n; i < xs.length; i++) e = xs[i] * k + e * (1 - k);
-  return e;
-}
-function rsi(xs: number[], n: number): number | null {
-  if (xs.length < n + 1) return null;
-  let gain = 0, loss = 0;
-  for (let i = 1; i <= n; i++) { const d = xs[i] - xs[i - 1]; if (d > 0) gain += d; else loss -= d; }
-  gain /= n; loss /= n;
-  for (let i = n + 1; i < xs.length; i++) {
-    const d = xs[i] - xs[i - 1];
-    gain = (gain * (n - 1) + Math.max(d, 0)) / n;
-    loss = (loss * (n - 1) + Math.max(-d, 0)) / n;
+/**
+ * Indikator-Reihen über alle Kerzen in EINEM Durchgang (linear). Früher wurde je Kerze neu
+ * gerechnet – bei Backtests über viele Werte blockierte das den ganzen Hausgeist minutenlang.
+ */
+export class Series {
+  private memo = new Map<string, (number | null)[]>();
+  constructor(readonly bars: Bar[]) {}
+
+  get(e: ExprT): (number | null)[] {
+    const key = JSON.stringify(e);
+    let out = this.memo.get(key);
+    if (!out) { out = this.compute(e); this.memo.set(key, out); }
+    return out;
   }
-  return loss === 0 ? 100 : 100 - 100 / (1 + gain / loss);
+
+  at(e: ExprT, i: number): number | null { return i < 0 ? null : this.get(e)[i] ?? null; }
+
+  private compute(e: ExprT): (number | null)[] {
+    const bars = this.bars, n = bars.length;
+    const raw: (number | null)[] = new Array(n).fill(null);
+    switch (e.ind) {
+      case "open": case "high": case "low": case "close": case "volume": {
+        const key = ({ open: "o", high: "h", low: "l", close: "c", volume: "v" } as const)[e.ind];
+        for (let i = 0; i < n; i++) raw[i] = bars[i][key];
+        break;
+      }
+      case "sma": {
+        const p = e.period; let sum = 0;
+        for (let i = 0; i < n; i++) {
+          sum += e.of === "volume" ? bars[i].v : bars[i].c;
+          if (i >= p) sum -= e.of === "volume" ? bars[i - p].v : bars[i - p].c;
+          if (i >= p - 1) raw[i] = sum / p;
+        }
+        break;
+      }
+      case "ema": {
+        const p = e.period, k = 2 / (p + 1); let ema = 0, seed = 0;
+        for (let i = 0; i < n; i++) {
+          const x = e.of === "volume" ? bars[i].v : bars[i].c;
+          if (i < p) { seed += x; if (i === p - 1) { ema = seed / p; raw[i] = ema; } continue; }
+          ema = x * k + ema * (1 - k); raw[i] = ema;
+        }
+        break;
+      }
+      case "rsi": {
+        const p = e.period ?? 14; let gain = 0, loss = 0;
+        for (let i = 1; i < n; i++) {
+          const d = bars[i].c - bars[i - 1].c;
+          if (i <= p) { if (d > 0) gain += d; else loss -= d; if (i === p) { gain /= p; loss /= p; raw[i] = loss === 0 ? 100 : 100 - 100 / (1 + gain / loss); } continue; }
+          gain = (gain * (p - 1) + Math.max(d, 0)) / p;
+          loss = (loss * (p - 1) + Math.max(-d, 0)) / p;
+          raw[i] = loss === 0 ? 100 : 100 - 100 / (1 + gain / loss);
+        }
+        break;
+      }
+      case "vwap": {
+        // je Handelstag (New York) neu beginnen
+        let day = "", pv = 0, vol = 0;
+        for (let i = 0; i < n; i++) {
+          const d = nyDay(bars[i].t);
+          if (d !== day) { day = d; pv = 0; vol = 0; }
+          pv += ((bars[i].h + bars[i].l + bars[i].c) / 3) * bars[i].v; vol += bars[i].v;
+          raw[i] = vol ? pv / vol : null;
+        }
+        break;
+      }
+      case "highest": case "lowest": {
+        // vorherige n Kerzen ohne die aktuelle
+        const p = e.period;
+        for (let i = p; i < n; i++) {
+          let m = e.ind === "highest" ? -Infinity : Infinity;
+          for (let j = i - p; j < i; j++) m = e.ind === "highest" ? Math.max(m, bars[j].h) : Math.min(m, bars[j].l);
+          raw[i] = m;
+        }
+        break;
+      }
+      case "value": raw.fill(e.value); break;
+    }
+    const mult = "mult" in e && e.mult !== undefined ? e.mult : 1;
+    return mult === 1 ? raw : raw.map((v) => (v === null ? null : v * mult));
+  }
 }
 
-/** Wert eines Ausdrucks an der Kerze `i` (Index in `bars`). `session` = Kerzen des heutigen Handelstags (für VWAP). */
-export function value(e: ExprT, bars: Bar[], i: number, sessionStartMs: number): number | null {
-  const upto = bars.slice(0, i + 1);
-  const b = upto[upto.length - 1];
-  if (!b) return null;
-  let v: number | null;
-  switch (e.ind) {
-    case "open": case "high": case "low": case "close": case "volume": {
-      const key = ({ open: "o", high: "h", low: "l", close: "c", volume: "v" } as const)[e.ind];
-      v = b[key]; break;
-    }
-    case "sma": case "ema": {
-      const xs = upto.map((x) => (e.of === "volume" ? x.v : x.c));
-      v = e.ind === "sma" ? sma(xs, e.period) : ema(xs, e.period); break;
-    }
-    case "rsi": v = rsi(upto.map((x) => x.c), e.period ?? 14); break;
-    case "vwap": {
-      const sess = upto.filter((x) => Date.parse(x.t) >= sessionStartMs);
-      const vol = sess.reduce((a, x) => a + x.v, 0);
-      v = vol ? sess.reduce((a, x) => a + ((x.h + x.l + x.c) / 3) * x.v, 0) / vol : null; break;
-    }
-    case "highest": case "lowest": {
-      // vorherige n Kerzen (ohne die aktuelle) – für Ausbrüche
-      const prev = upto.slice(-e.period - 1, -1);
-      v = prev.length < e.period ? null : e.ind === "highest" ? Math.max(...prev.map((x) => x.h)) : Math.min(...prev.map((x) => x.l));
-      break;
-    }
-    case "value": v = e.value; break;
-  }
-  return v === null ? null : v * ("mult" in e && e.mult !== undefined ? e.mult : 1);
+const NY_DAY = new Intl.DateTimeFormat("sv-SE", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" });
+const NY_HM = new Intl.DateTimeFormat("en-GB", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+const nyDayCache = new Map<string, string>();
+function nyDay(t: string): string {
+  const k = t.slice(0, 13);
+  let d = nyDayCache.get(k);
+  if (!d) { d = NY_DAY.format(new Date(t)); if (nyDayCache.size > 50_000) nyDayCache.clear(); nyDayCache.set(k, d); }
+  return d;
 }
 
-export function holds(c: ConditionT, bars: Bar[], sessionStartMs: number): boolean {
-  const i = bars.length - 1;
-  const l = value(c.left as ExprT, bars, i, sessionStartMs), r = value(c.right as ExprT, bars, i, sessionStartMs);
+/** Gilt die Bedingung an Kerze i? */
+export function holdsAt(c: ConditionT, s: Series, i: number): boolean {
+  const l = s.at(c.left as ExprT, i), r = s.at(c.right as ExprT, i);
   if (l === null || r === null) return false;
   if (c.op === ">") return l > r;
   if (c.op === "<") return l < r;
-  const lp = value(c.left as ExprT, bars, i - 1, sessionStartMs), rp = value(c.right as ExprT, bars, i - 1, sessionStartMs);
+  const lp = s.at(c.left as ExprT, i - 1), rp = s.at(c.right as ExprT, i - 1);
   if (lp === null || rp === null) return false;
   return c.op === "cross_above" ? lp <= rp && l > r : lp >= rp && l < r;
+}
+
+/** Bedingung an der letzten Kerze. */
+export function holds(c: ConditionT, bars: Bar[], _sessionStartMs = 0): boolean {
+  return holdsAt(c, new Series(bars), bars.length - 1);
 }
 
 /** Für Berichte: Regel in Worten. */
@@ -260,6 +305,8 @@ export class IntradayEngine {
     for (const sym of symbols) {
       const bars = aggregate(raw[sym] ?? [], rules.timeframe, now);
       if (bars.length < 3) continue;
+      const series = new Series(bars);
+      const last_i = bars.length - 1;
       const last = bars[bars.length - 1];
       const pos = mine.get(sym);
 
@@ -277,7 +324,7 @@ export class IntradayEngine {
         else if (rules.exit.trailing_stop_pct && (price / held.peak - 1) * 100 <= -rules.exit.trailing_stop_pct) why = `Nachlaufender Stop (Hoch ${held.peak.toFixed(2)})`;
         else if (rules.exit.max_hold_min && (now - held.entryAt) / 60_000 >= rules.exit.max_hold_min) why = `Haltedauer ${rules.exit.max_hold_min} Min. erreicht`;
         else if (this.state.lastBar[sym] !== last.t) {
-          const hit = rules.exit.conditions.find((c) => holds(c, bars, openMs));
+          const hit = rules.exit.conditions.find((c) => holdsAt(c, series, last_i));
           if (hit) why = `Ausstiegsregel: ${describe(hit.left as ExprT)} ${hit.op} ${describe(hit.right as ExprT)}`;
         }
         if (why) {
@@ -299,7 +346,7 @@ export class IntradayEngine {
       if (this.state.trades >= rules.risk.max_trades_per_day) continue;
       if ((this.state.cooldown[sym] ?? 0) > now) continue;
       if (mine.size >= rules.sizing.max_positions) continue;
-      if (!rules.entry.every((c) => holds(c, bars, openMs))) continue;
+      if (!rules.entry.every((c) => holdsAt(c, series, last_i))) continue;
       if (Number(acct.buying_power) < rules.sizing.usd_per_trade) continue;
 
       const reason = `Einstieg (${rules.timeframe}-Min.-Kerze ${new Date(last.t).toLocaleTimeString("de-DE", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit" })} NY): ${rules.entry.map((c) => `${describe(c.left as ExprT)} ${c.op} ${describe(c.right as ExprT)}`).join(" UND ")}`;
@@ -318,24 +365,24 @@ export class IntradayEngine {
  */
 export interface BacktestResult { trades: number; wins: number; pnl_usd: number; pnl_pct_of_capital: number; max_drawdown_usd: number; per_symbol: Record<string, { trades: number; pnl_usd: number }>; examples: string[] }
 
-export function backtest(rules: RulesT, bars1m: Record<string, Bar[]>): BacktestResult {
+export async function backtest(rules: RulesT, bars1m: Record<string, Bar[]>): Promise<BacktestResult> {
   const SLIP = 0.0005;
   const res: BacktestResult = { trades: 0, wins: 0, pnl_usd: 0, pnl_pct_of_capital: 0, max_drawdown_usd: 0, per_symbol: {}, examples: [] };
   const events: { t: number; pnl: number }[] = [];
-  const dayOf = (t: string) => new Date(t).toLocaleDateString("sv-SE", { timeZone: "America/New_York" });
-  const nyMinutes = (t: string) => { const [h, m] = new Date(t).toLocaleTimeString("en-GB", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit" }).split(":").map(Number); return h * 60 + m; };
+  const dayOf = nyDay;
+  const nyMinutes = (t: string) => { const [h, m] = NY_HM.format(new Date(t)).split(":").map(Number); return (h % 24) * 60 + m; };
 
   for (const sym of rules.symbols) {
     const regular = (bars1m[sym] ?? []).filter((b) => { const m = nyMinutes(b.t); return m >= 570 && m < 960; });
     const all = aggregate(regular, rules.timeframe, Date.now());
+    const series = new Series(all);
+    await new Promise((r) => setImmediate(r)); // andere Aufgaben (Erinnerungen, App) nicht blockieren
     let pos: { entry: number; at: number; peak: number; qty: number; t: string } | null = null;
     let cooldownUntil = 0, dayTrades = 0, curDay = "", dayPnl = 0;
     for (let i = 2; i < all.length; i++) {
       const b = all[i];
       const t = Date.parse(b.t), d = dayOf(b.t);
       if (d !== curDay) { curDay = d; dayTrades = 0; dayPnl = 0; }
-      const sessionStart = Date.parse(all.find((x) => dayOf(x.t) === d)!.t);
-      const window = all.slice(Math.max(0, i - 400), i + 1);
       const minute = nyMinutes(b.t) + rules.timeframe;
       if (pos) {
         pos.peak = Math.max(pos.peak, b.h);
@@ -345,7 +392,7 @@ export function backtest(rules: RulesT, bars1m: Record<string, Bar[]>): Backtest
         else if (rules.exit.take_profit_pct && chgHigh >= rules.exit.take_profit_pct) { exit = pos.entry * (1 + rules.exit.take_profit_pct / 100); why = "Ziel"; }
         else if (rules.exit.trailing_stop_pct && (b.c / pos.peak - 1) * 100 <= -rules.exit.trailing_stop_pct) { exit = b.c; why = "Trailing"; }
         else if (rules.exit.max_hold_min && (t - pos.at) / 60_000 >= rules.exit.max_hold_min) { exit = b.c; why = "Haltedauer"; }
-        else if (rules.exit.conditions.some((c) => holds(c, window, sessionStart))) { exit = b.c; why = "Regel"; }
+        else if (rules.exit.conditions.some((c) => holdsAt(c, series, i))) { exit = b.c; why = "Regel"; }
         else if (minute >= 960 - rules.risk.flat_before_close_min || dayOf(all[i + 1]?.t ?? b.t) !== d || i === all.length - 1) { exit = b.c; why = "Schluss"; }
         if (exit !== null) {
           const pnl = pos.qty * (exit * (1 - SLIP) - pos.entry);
@@ -360,7 +407,7 @@ export function backtest(rules: RulesT, bars1m: Record<string, Bar[]>): Backtest
       const sinceOpen = nyMinutes(b.t) - 570;
       if (sinceOpen < rules.risk.no_entry_first_min || minute >= 960 - rules.risk.flat_before_close_min) continue;
       if (t < cooldownUntil || dayTrades >= rules.risk.max_trades_per_day || dayPnl <= -rules.risk.max_daily_loss_usd) continue;
-      if (rules.entry.every((c) => holds(c, window, sessionStart))) {
+      if (rules.entry.every((c) => holdsAt(c, series, i))) {
         const entry = b.c * (1 + SLIP);
         pos = { entry, at: t, peak: b.c, qty: rules.sizing.usd_per_trade / entry, t: b.t };
         dayTrades++;

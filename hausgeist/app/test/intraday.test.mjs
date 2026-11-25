@@ -29,10 +29,10 @@ test("Regel-Schema verlangt Stop-Loss und Tagesgrenze", () => {
   assert.equal(ok.risk.flat_before_close_min, 10);
 });
 
-test("Backtest: Ausbruch mit Ziel und Stop", () => {
+test("Backtest: Ausbruch mit Ziel und Stop", async () => {
   const r = Rules.parse({ symbols: ["X"], timeframe: 1, entry: [{ left: { ind: "close" }, op: ">", right: { ind: "highest", period: 3 } }], exit: { stop_loss_pct: 1, take_profit_pct: 1 }, sizing: { usd_per_trade: 1000, max_positions: 1 }, risk: { max_daily_loss_usd: 500, no_entry_first_min: 0, cooldown_min: 0 } });
   const prices = [100, 100, 100, 100, 100.5, 100.8, 101.2, 101.8, 102, 102, 102];
-  const res = backtest(r, { X: prices.map((c, i) => mk(i, c)) });
+  const res = await backtest(r, { X: prices.map((c, i) => mk(i, c)) });
   assert.ok(res.trades >= 1);
   assert.ok(res.pnl_usd > 0);
 });

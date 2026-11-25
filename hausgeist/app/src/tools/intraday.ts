@@ -69,7 +69,7 @@ export function intradayTools(ctx: ToolContext) {
       const r = a.rules ? Rules.parse(a.rules) : (await activeRules())?.rules;
       if (!r) throw new Error("Keine Regeln angegeben und keine aktive Regel");
       const bars = await alpaca.bars(r.symbols, new Date(Date.now() - a.days * 86_400_000).toISOString());
-      return ok({ zeitraum_tage: a.days, regel: words(r), ergebnis: backtest(r, bars), hinweis: "Vergangene Kerzen, 0,05 % Schlupf je Seite, Positionen je Wert unabhängig gerechnet – kein Versprechen für die Zukunft." });
+      return ok({ zeitraum_tage: a.days, regel: words(r), ergebnis: await backtest(r, bars), hinweis: "Vergangene Kerzen, 0,05 % Schlupf je Seite, Positionen je Wert unabhängig gerechnet – kein Versprechen für die Zukunft." });
     })),
 
     tool("intraday_goals", "Wünsche/Geschmack des Nutzers für die Intraday-Strategie speichern (vollständiger Text) und/oder Uhrzeit des Abendfazits.", {

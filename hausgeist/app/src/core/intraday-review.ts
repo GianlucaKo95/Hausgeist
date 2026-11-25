@@ -65,7 +65,7 @@ export async function reviewDay(config: Config, alpaca: AlpacaPaper, day: string
     const parsed = Rules.safeParse(a.rules);
     if (!parsed.success) return { content: [{ type: "text" as const, text: `Ungültige Regeln: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}` }] };
     const bars = await alpaca.bars(parsed.data.symbols, new Date(Date.now() - a.days * 86_400_000).toISOString());
-    return { content: [{ type: "text" as const, text: JSON.stringify(backtest(parsed.data, bars)) }] };
+    return { content: [{ type: "text" as const, text: JSON.stringify(await backtest(parsed.data, bars)) }] };
   });
 
   const prompt = `Handelstag ${day} (New York).
