@@ -83,6 +83,8 @@ export const Options = z.object({
   light_model: z.string().default("claude-haiku-5-5"),
   supabase_url: z.string().url(),
   supabase_service_key: z.string().min(1, "supabase_service_key fehlt"),
+  /** Optional: persönlicher Supabase-Zugangsschlüssel (sbp_…) – erlaubt den automatischen Neustart, wenn die Datenbank-Schnittstelle hängt. */
+  supabase_access_token: z.string().default(""),
   paperless_url: z.string().default(""),
   paperless_token: z.string().default(""),
   payment_mode: z.enum(["dryrun", "fints"]).default("dryrun"),

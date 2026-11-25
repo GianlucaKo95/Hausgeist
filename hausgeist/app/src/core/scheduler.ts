@@ -1,3 +1,4 @@
+import type { DbWatch } from "./db-watch.js";
 import { profile, reviewDay } from "./intraday-review.js";
 import type { IntradayEngine } from "./intraday.js";
 import type { AlpacaPaper } from "../adapters/alpaca.js";
@@ -79,6 +80,8 @@ export class Routines {
   private lastTradingCheck = 0;
   private paperRetryAt = 0;
   private lastIntradayReview = 0;
+  private lastDbCheck = 0;
+  dbWatch?: DbWatch;
   intraday?: IntradayEngine;
   alpaca?: AlpacaPaper;
   private lastDepartureCheck = 0;
@@ -126,6 +129,10 @@ export class Routines {
 
   private async tick(): Promise<void> {
     const now = berlinNow();
+    if (this.dbWatch && Date.now() - this.lastDbCheck >= 60_000) {
+      this.lastDbCheck = Date.now();
+      void this.dbWatch.check().catch(() => undefined);
+    }
     this.run("erinnerungen", () => this.reminders());
     this.run("orte", () => this.locationReminders());
     if (this.config.departure_alerts && Date.now() - this.lastDepartureCheck >= 5 * 60_000) {
@@ -470,7 +477,7 @@ export class Routines {
       const summary = await runMiniAgent(this.config, {
         light: true, label: "mail-ueberblick",
         system: `Du bist der Communication-Agent und erstellst für ${user.name} einen kurzen Mail-Überblick. Du liest nur – nichts senden, verschieben oder markieren.`,
-        prompt: `Schau dir die ungelesenen Mails seit ${sinceText} in allen Postfächern an, die du für ${user.name} siehst (ältere ignorieren).
+        prompt: `Schau dir ALLE Mails seit ${sinceText} an – auch bereits gelesene – in allen Postfächern, die du für ${user.name} siehst (list_mailboxes, dann je Postfach list_mails mit days: 1, unseen_only: false; ältere als ${sinceText} ignorieren).
 Fasse in höchstens 8 kurzen Zeilen zusammen:
 - ❗ Wichtig (Behörden, Fristen, Bank, Schule, Arzt …)
 - ✉️ Braucht eine Antwort (wer, worum)
@@ -478,9 +485,11 @@ Fasse in höchstens 8 kurzen Zeilen zusammen:
 Newsletter und Werbung nur als eine Zeile „x Newsletter/Werbung“. Wenn es nichts Relevantes gibt, antworte genau NICHTS.`,
         tools: tools as never,
       });
-      if (summary && !/^NICHTS\b/.test(summary) && user.notify_service) {
-        await this.ha.notify(user.notify_service, "Mail-Überblick", summary.slice(0, 1500));
-      }
+      const nothing = !summary.trim() || /^NICHTS\b/.test(summary.trim());
+      await audit({ agent: "routine", action: "mail-ueberblick-ergebnis", level: 0, user_id: user.id, result: nothing ? "nichts" : "gesendet", detail: { text: summary.slice(0, 300) } }).catch(() => undefined);
+      if (!user.notify_service) continue;
+      // Auch „nichts Wichtiges“ melden – sonst sieht es aus, als liefe der Überblick nicht
+      await this.ha.notify(user.notify_service, "Mail-Überblick", nothing ? `Seit ${sinceText} nichts Wichtiges in deinen Postfächern.` : summary.slice(0, 1500));
     }
   }
 

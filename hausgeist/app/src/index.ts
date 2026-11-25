@@ -1,3 +1,5 @@
+import { createServer, type Server } from "node:http";
+import { DbWatch } from "./core/db-watch.js";
 import { AlpacaPaper } from "./adapters/alpaca.js";
 import { IntradayEngine } from "./core/intraday.js";
 import { FritzBox } from "./adapters/fritzbox.js";
@@ -35,21 +37,6 @@ async function main() {
   db(config);
   initUploads(config.dataDir);
 
-  // Supabase kann kurz hängen – bis zu 5 Minuten geduldig sein, statt sofort aufzugeben.
-  for (let attempt = 1; ; attempt++) {
-    const { error, status } = await db().from("users").select("id").limit(1);
-    if (!error) break;
-    const reason = error.message || `HTTP ${status}`;
-    const hint = status === 504 || status === 503
-      ? "Supabase-Schnittstelle antwortet nicht (im Supabase-Dashboard Projekt neu starten)"
-      : status === 401 ? "Supabase-Schlüssel falsch (supabase_service_key)"
-      : status === 404 ? "Tabelle fehlt – Migrationen ausführen" : "unbekannt";
-    if (attempt >= 10) throw new Error(`Supabase nicht erreichbar: ${reason} – ${hint}`);
-    log.warn(`Supabase noch nicht bereit (${reason} – ${hint}), Versuch ${attempt}/10 in 30 s`);
-    await new Promise((r) => setTimeout(r, 30_000));
-  }
-
-  if (!config.supervisorToken) log.error("Kein Supervisor-Token gefunden – Home Assistant ist nicht erreichbar (homeassistant_api in config.yaml prüfen)");
   const ha = new HomeAssistant(config);
   fetch(`${config.haBaseUrl}/`, { headers: { Authorization: `Bearer ${config.supervisorToken}` } })
     .then((r) => r.ok ? log.info("Home Assistant erreichbar") : log.error(`Home Assistant lehnt ab: HTTP ${r.status}`))
@@ -60,6 +47,35 @@ async function main() {
     ha.setAppSender((userId, title, message, acts, tag) => apns.notifyUser(userId, title, message, acts, tag));
     log.info("Push über die Hausgeist-App aktiv");
   }
+  const dbWatch = new DbWatch(config, (svc, t, m) => ha.notify(svc, t, m));
+
+  // Während des Wartens auf Supabase schon auf Port 8099 antworten: der Watchdog sieht „lebt“,
+  // die App bekommt eine klare Meldung statt einer Zeitüberschreitung.
+  let waiting: Server | null = null;
+  // Supabase kann hängen – geduldig warten, statt aufzugeben.
+  for (let attempt = 1; ; attempt++) {
+    const { error, status } = await db().from("users").select("id").limit(1);
+    if (!error) break;
+    waiting ??= createServer((req, res) => {
+      const health = (req.url ?? "").endsWith("/api/health");
+      res.writeHead(health ? 200 : 503, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(health ? { ok: true, version: process.env.HAUSGEIST_VERSION ?? "dev", starting: true } : { error: "Hausgeist wartet auf die Datenbank (Supabase antwortet nicht)." }));
+    }).listen(8099);
+    const reason = error.message || `HTTP ${status}`;
+    const hint = status === 504 || status === 503
+      ? "Supabase-Schnittstelle antwortet nicht (im Supabase-Dashboard Projekt neu starten)"
+      : status === 401 ? "Supabase-Schlüssel falsch (supabase_service_key)"
+      : status === 404 ? "Tabelle fehlt – Migrationen ausführen" : "unbekannt";
+    // Nicht aufgeben (sonst Neustart-Schleife ohne Warnung) – die Wache meldet die Störung per Push
+    if (status === 401 || status === 404) throw new Error(`Supabase: ${reason} – ${hint}`);
+    log.warn(`Supabase noch nicht bereit (${reason} – ${hint}), Versuch ${attempt} – nächster in 30 s`);
+    await dbWatch.check().catch(() => undefined);
+    await new Promise((r) => setTimeout(r, 30_000));
+  }
+
+  if (waiting) { waiting.closeAllConnections(); await new Promise((r) => waiting!.close(r)); }
+
+  if (!config.supervisorToken) log.error("Kein Supervisor-Token gefunden – Home Assistant ist nicht erreichbar (homeassistant_api in config.yaml prüfen)");
   const apple = new AppleCalendar(config);
   const paperless = new Paperless(config);
   const fritz = new FritzBox(config);
@@ -90,6 +106,7 @@ async function main() {
   const master = new MasterAgent(config, base);
   const routines = new Routines(config, ha, base, fints);
   routines.intraday = intraday;
+  routines.dbWatch = dbWatch;
   routines.alpaca = alpaca;
 
   ha.onNotificationAction((action, haUserId) => {

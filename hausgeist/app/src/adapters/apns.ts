@@ -1,3 +1,5 @@
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { connect, type ClientHttp2Session } from "node:http2";
 import { createPrivateKey, sign, type KeyObject } from "node:crypto";
 import type { Config } from "../core/config.js";
@@ -35,7 +37,12 @@ export class ApnsClient {
   private jwt: { token: string; at: number } | null = null;
   private sessions = new Map<string, ClientHttp2Session>();
 
+  private tokenCache = new Map<string, { token: string; environment: string }[]>();
+  private cacheFile: string;
+
   constructor(private readonly config: Config) {
+    this.cacheFile = join(config.dataDir, "push-devices-cache.json");
+    try { if (existsSync(this.cacheFile)) this.tokenCache = new Map(Object.entries(JSON.parse(readFileSync(this.cacheFile, "utf8")))); } catch { /* egal */ }
     if (this.enabled) this.key = createPrivateKey(normalizeP8(config.apns_key));
   }
 
@@ -97,7 +104,17 @@ export class ApnsClient {
    */
   async notifyUser(userId: string, title: string, message: string, actions: PushAction[] = [], tag?: string): Promise<boolean> {
     if (!this.enabled) return false;
-    const { data: devices } = await db().from("push_devices").select("token, environment").eq("user_id", userId);
+    let devices: { token: string; environment: string }[] | null = null;
+    try {
+      const { data, error } = await db().from("push_devices").select("token, environment").eq("user_id", userId).abortSignal(AbortSignal.timeout(8_000));
+      if (error) throw error;
+      devices = data as { token: string; environment: string }[];
+      this.tokenCache.set(userId, devices);
+      try { writeFileSync(this.cacheFile, JSON.stringify(Object.fromEntries(this.tokenCache)), { mode: 0o600 }); } catch { /* egal */ }
+    } catch {
+      // Datenbank hängt: mit den zuletzt bekannten Geräten zustellen
+      devices = this.tokenCache.get(userId) ?? null;
+    }
     if (!devices?.length) return false;
     const payload = {
       aps: {

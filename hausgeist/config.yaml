@@ -28,6 +28,7 @@ options:
   light_model: claude-haiku-5-5
   supabase_url: ""
   supabase_service_key: ""
+  supabase_access_token: ""
   paperless_url: ""
   paperless_token: ""
   payment_mode: dryrun
@@ -58,6 +59,7 @@ schema:
   light_model: "str?"
   supabase_url: url
   supabase_service_key: password
+  supabase_access_token: "password?"
   paperless_url: str
   paperless_token: password
   payment_mode: list(dryrun|fints)
