@@ -31,3 +31,14 @@ test("Termine schreiben: ganztägig und mit Uhrzeit", async () => {
   assert.equal(ev.start, "2026-12-03T19:00:00+01:00");
   assert.equal(ev.recurring, false);
 });
+
+test("Mail-Überblick: alle Ordner außer Gesendet/Entwürfe/Papierkorb", async () => {
+  const { skipFolder } = await import("../dist/core/scheduler.js");
+  assert.equal(skipFolder({ path: "INBOX", name: "INBOX" }), false);
+  assert.equal(skipFolder({ path: "Unbekannt", name: "Unbekannt" }), false);
+  assert.equal(skipFolder({ path: "Spam", name: "Spam", special: "\\Junk" }), false);
+  assert.equal(skipFolder({ path: "Rechnungen", name: "Rechnungen" }), false);
+  assert.equal(skipFolder({ path: "Gesendet", name: "Gesendet" }), true);
+  assert.equal(skipFolder({ path: "[Gmail]/All Mail", name: "All Mail", special: "\\All" }), true);
+  assert.equal(skipFolder({ path: "Papierkorb", name: "Papierkorb", special: "\\Trash" }), true);
+});
