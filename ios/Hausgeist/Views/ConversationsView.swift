@@ -19,21 +19,12 @@ struct ConversationsView: View {
                     ContentUnavailableView("Noch keine Gespräche", systemImage: "bubble.left.and.bubble.right",
                                            description: Text("Gespräche erscheinen hier, sobald du dem Hausgeist schreibst."))
                 }
-                ForEach(items) { c in
-                    Button { Task { await open(c) } } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(c.title).foregroundStyle(.primary).lineLimit(2)
-                                Text(subtitle(c)).font(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            if opening == c.id { ProgressView() }
-                            else if c.current { Image(systemName: "checkmark").foregroundStyle(.tint) }
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .swipeActions {
-                        Button("Löschen", systemImage: "trash", role: .destructive) { Task { await delete(c) } }
+                // Nach Bereich gegliedert (Fach-Agent), Bereiche nach letzter Aktivität
+                ForEach(sections, id: \.name) { section in
+                    Section {
+                        ForEach(section.items) { c in row(c) }
+                    } header: {
+                        Label(section.name, systemImage: Self.icon(section.name))
                     }
                 }
             }
@@ -42,6 +33,52 @@ struct ConversationsView: View {
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Schließen") { dismiss() } } }
             .task { await load() }
             .refreshable { await load() }
+        }
+    }
+
+    private var sections: [(name: String, items: [APIClient.ConversationInfo])] {
+        var order: [String] = []
+        var groups: [String: [APIClient.ConversationInfo]] = [:]
+        for c in items {
+            let k = c.category ?? "Allgemein"
+            if groups[k] == nil { order.append(k) }
+            groups[k, default: []].append(c)
+        }
+        return order.map { ($0, groups[$0] ?? []) }
+    }
+
+    @ViewBuilder private func row(_ c: APIClient.ConversationInfo) -> some View {
+        Button { Task { await open(c) } } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(c.title).foregroundStyle(.primary).lineLimit(2)
+                    Text(subtitle(c)).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if opening == c.id { ProgressView() }
+                else if c.current { Image(systemName: "checkmark").foregroundStyle(.tint) }
+            }
+        }
+        .buttonStyle(.plain)
+        .swipeActions {
+            Button("Löschen", systemImage: "trash", role: .destructive) { Task { await delete(c) } }
+        }
+    }
+
+    static func icon(_ category: String) -> String {
+        switch category {
+        case "Finanzen": return "eurosign.circle"
+        case "Dokumente": return "doc.text"
+        case "Einkauf": return "cart"
+        case "Mail": return "envelope"
+        case "Haus": return "house"
+        case "Fernseher": return "tv"
+        case "Familie & Kalender": return "calendar"
+        case "Business": return "briefcase"
+        case "IT & Computer": return "desktopcomputer"
+        case "Recherche": return "magnifyingglass"
+        case "Trading": return "chart.line.uptrend.xyaxis"
+        default: return "bubble.left.and.bubble.right"
         }
     }
 

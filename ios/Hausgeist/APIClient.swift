@@ -160,6 +160,7 @@ struct APIClient {
     struct ConversationInfo: Decodable, Identifiable, Hashable {
         let id: String
         let title: String
+        let category: String?
         let updated_at: String
         let messages: Int
         let current: Bool
@@ -168,8 +169,8 @@ struct APIClient {
 
     func conversations() async throws -> [ConversationInfo] {
         if AppConfig.isDemo {
-            return [ConversationInfo(id: "d1", title: "Welche Verträge kann ich bald kündigen?", updated_at: "2026-11-24T08:00:00Z", messages: 4, current: true),
-                    ConversationInfo(id: "d2", title: "Hotel in Rom für Ostern", updated_at: "2026-11-20T18:30:00Z", messages: 6, current: false)]
+            return [ConversationInfo(id: "d1", title: "Verträge kündigen", category: "Dokumente", updated_at: "2026-11-24T08:00:00Z", messages: 4, current: true),
+                    ConversationInfo(id: "d2", title: "Hotel Rom Ostern", category: "Recherche", updated_at: "2026-11-20T18:30:00Z", messages: 6, current: false)]
         }
         struct R: Decodable { let conversations: [ConversationInfo] }
         let r: R = try await request("api/conversations")

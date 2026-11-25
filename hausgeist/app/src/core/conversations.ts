@@ -1,3 +1,5 @@
+import Anthropic from "@anthropic-ai/sdk";
+import type { Config } from "./config.js";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { db } from "./db.js";
@@ -59,18 +61,58 @@ export class Conversations {
     await db().from("conversations").update(patch).eq("id", conv.id);
   }
 
+  /**
+   * Themen-Titel wie bei Claude: nach der ersten Antwort (und nach einigen Nachrichten noch einmal)
+   * fasst ein kleines Modell das Thema in wenigen Worten zusammen. Der Bereich ergibt sich aus dem
+   * Fach-Agenten, der am meisten beteiligt war.
+   */
+  async autoTitle(conv: Conversation, config: Config, agents: string[], force = false): Promise<void> {
+    const { data: row } = await db().from("conversations").select("titled, category, conversation_messages(count)").eq("id", conv.id).maybeSingle();
+    const count = (row?.conversation_messages as unknown as { count: number }[])?.[0]?.count ?? 0;
+    const patch: Record<string, unknown> = {};
+    // Bereich: aus den beteiligten Fach-Agenten (einmal festgelegt, dann stabil)
+    if (!row?.category && agents.length) patch.category = categoryOf(agents);
+    // erster Titel nach der ersten Antwort, einmal verfeinern nach 6 Nachrichten
+    if (force || !row?.titled || count === 6) {
+      const text = await this.historyText(conv.id);
+      if (!text.trim()) return;
+      try {
+        const client = new Anthropic({ apiKey: config.anthropic_api_key });
+        const r = await client.messages.create({
+          model: config.light_model, max_tokens: 60,
+          system: `Gib einem Chat einen kurzen deutschen Themen-Titel (2–5 Wörter, wie eine Überschrift, kein Satz) und ordne ihn einem Bereich zu.
+Bereiche: ${[...new Set(Object.values(CATEGORY)), "Trading", "Allgemein"].join(", ")}.
+Antworte nur mit JSON: {"titel":"…","bereich":"…"}. Beispiele für Titel: „Elternabend Termin“, „Stromrechnung Oktober“, „Laptop: Chrome installieren“.`,
+          messages: [{ role: "user", content: text.slice(-4000) }],
+        });
+        const raw = r.content.map((c) => (c.type === "text" ? c.text : "")).join("");
+        const j = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)) as { titel?: string; bereich?: string };
+        const t = String(j.titel ?? "").trim().replace(/^["„“']+|["„“'.]+$/g, "").slice(0, 60);
+        if (t) { patch.title = t; patch.titled = true; conv.title = t; }
+        if (!row?.category && !patch.category && j.bereich) patch.category = String(j.bereich).slice(0, 40);
+      } catch { /* Titel ist Komfort */ }
+    }
+    if (Object.keys(patch).length) await db().from("conversations").update(patch).eq("id", conv.id);
+  }
+
+  /** Ältere Gespräche einmalig mit Themen-Titel und Bereich versehen. */
+  async backfillTitles(config: Config, limit = 60): Promise<void> {
+    const { data } = await db().from("conversations").select("id, user_id, title, session_id, updated_at").eq("titled", false).order("updated_at", { ascending: false }).limit(limit);
+    for (const c of data ?? []) await this.autoTitle(c as Conversation, config, [], true).catch(() => undefined);
+  }
+
   async setSession(conv: Conversation, sessionId: string): Promise<void> {
     conv.session_id = sessionId;
     await db().from("conversations").update({ session_id: sessionId }).eq("id", conv.id);
   }
 
   async list(userId: string, limit = 100) {
-    const { data, error } = await db().from("conversations").select("id, title, updated_at, conversation_messages(count)")
+    const { data, error } = await db().from("conversations").select("id, title, category, updated_at, conversation_messages(count)")
       .eq("user_id", userId).order("updated_at", { ascending: false }).limit(limit);
     if (error) throw error;
     const current = this.current()[userId];
     return (data ?? [])
-      .map((c) => ({ id: c.id, title: c.title, updated_at: c.updated_at, messages: (c.conversation_messages as unknown as { count: number }[])?.[0]?.count ?? 0, current: c.id === current }))
+      .map((c) => ({ id: c.id, title: c.title, category: c.category ?? "Allgemein", updated_at: c.updated_at, messages: (c.conversation_messages as unknown as { count: number }[])?.[0]?.count ?? 0, current: c.id === current }))
       .filter((c) => c.messages > 0);
   }
 
@@ -94,4 +136,16 @@ export class Conversations {
     if (this.current()[userId] === id) this.setCurrent(userId, null);
     return Boolean(data?.length);
   }
+}
+
+/** Bereich eines Gesprächs nach Fach-Agent (häufigster gewinnt). */
+const CATEGORY: Record<string, string> = {
+  finance: "Finanzen", document: "Dokumente", shopping: "Einkauf", communication: "Mail",
+  household: "Haus", tv: "Fernseher", family: "Familie & Kalender", business: "Business",
+  it: "IT & Computer", research: "Recherche",
+};
+export function categoryOf(agents: string[]): string {
+  const counts = new Map<string, number>();
+  for (const a of agents) if (CATEGORY[a]) counts.set(CATEGORY[a], (counts.get(CATEGORY[a]) ?? 0) + 1);
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "Allgemein";
 }

@@ -92,6 +92,8 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
   };
 
   const conversations = new Conversations(config.dataDir);
+  // Alte Gespräche bekommen einmalig Themen-Titel (im Hintergrund)
+  setTimeout(() => void conversations.backfillTitles(config).catch(() => undefined), 60_000);
   const memory = new LongMemory(config);
   listUsers().then((u) => memory.backfill(u)).catch(() => undefined);
   const jobs = new ChatJobs(async (job) => {
@@ -177,6 +179,7 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
         // Ältere Gespräche nicht samt aller Werkzeug-Ausgaben fortsetzen (teuer), sondern mit kurzem Textverlauf neu beginnen
         const fresh = conv.updated_at && Date.now() - Date.parse(conv.updated_at) < 20 * 60_000;
         let streamJob: { id: string } | null = null;
+        const agentsUsed: string[] = [];
         const streaming = body.stream === true && body.async === true;
         const work = master.chat(user, message.slice(0, 8000), attachments, {
           id: fresh ? conv.session_id : null,
@@ -184,12 +187,14 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
           history: () => conversations.historyText(conv.id),
         }, {
           voice: body.voice === true,
+          onAgent: (a) => agentsUsed.push(a),
           onText: streaming ? (d) => { if (streamJob) jobs.pushText(streamJob.id, d); } : undefined,
         }).then(
           async (reply) => {
             await conversations.add(conv, "ghost", reply).catch(() => undefined);
             // Langzeitgedächtnis im Hintergrund – gilt danach in jedem Gespräch
             memory.learn(user.id, user.name, message, reply, conv.id);
+            void conversations.autoTitle(conv, config, agentsUsed).catch(() => undefined);
             return reply;
           },
           async (e) => { await conversations.add(conv, "error", e instanceof Error ? e.message : String(e)).catch(() => undefined); throw e; },

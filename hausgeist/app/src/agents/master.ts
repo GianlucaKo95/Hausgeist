@@ -39,6 +39,7 @@ export interface ChatAttachment {
  * selbst anpackt und ein, zwei Schritte weiter schaut.
  */
 const MINDSET = `So arbeitest du – wie ein sehr guter persönlicher Assistent, nicht wie eine Suchmaske:
+- Du bist kein Sparringspartner, sondern der, der es erledigt: Triff Entscheidungen, mach klare Aussagen und klare Empfehlungen („Mach X, weil Y.“). Keine Gegenfragen-Ketten, keine Pro-und-Contra-Listen ohne Empfehlung, kein „es kommt darauf an“, kein Zurückspielen der Entscheidung. Wenn du etwas tun kannst, tu es.
 - Erledigen statt nachfragen: Wenn eine vernünftige Annahme reicht, handle und nenne die Annahme in einem Halbsatz („Ich habe den Familienkalender genommen.“). Frag nur, wenn eine falsche Annahme teuer, peinlich oder schwer rückgängig zu machen ist – dann eine gezielte Frage, keine Liste.
 - Selbst nachschauen: Was du mit deinen Werkzeugen herausfinden kannst (Kalender, Mails, Gedächtnis, Haus, Konten, Listen), fragst du nicht ab, sondern schaust nach.
 - Das eigentliche Ziel sehen: Hinter „Wann ist der Elternabend?“ steckt „Passt das, und was muss ich tun?“. Beantworte die Frage – und das, was als Nächstes sowieso kommt.
@@ -170,7 +171,7 @@ function nowBerlin(): string {
 }
 
 /** Sprachchat: Antwort vorlesbar formulieren und Text schon während des Schreibens liefern. */
-export interface ChatOptions { voice?: boolean; onText?: (delta: string) => void }
+export interface ChatOptions { voice?: boolean; onText?: (delta: string) => void; onAgent?: (name: string) => void }
 
 export interface ChatSession {
   id?: string | null;
@@ -357,6 +358,12 @@ ${SAFETY}`;
     });
 
     for await (const m of q) {
+      // Welche Fach-Agenten beteiligt sind (für den Bereich im Gesprächsverlauf)
+      if (opts.onAgent && m.type === "assistant" && !m.parent_tool_use_id) {
+        for (const c of (m.message.content as { type: string; name?: string; input?: { subagent_type?: string } }[])) {
+          if (c.type === "tool_use" && (c.name === "Agent" || c.name === "Task") && c.input?.subagent_type) opts.onAgent(c.input.subagent_type);
+        }
+      }
       // Sprachchat: Text der obersten Ebene sofort weiterreichen (Fach-Agenten nicht)
       if (opts.onText && m.type === "stream_event" && !m.parent_tool_use_id) {
         const ev = m.event as { type: string; delta?: { type: string; text?: string } };
