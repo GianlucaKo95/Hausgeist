@@ -25,6 +25,7 @@ hassio_api: false
 options:
   anthropic_api_key: ""
   model: claude-sonnet-5-5
+  light_model: claude-haiku-5-5
   supabase_url: ""
   supabase_service_key: ""
   paperless_url: ""
@@ -54,6 +55,7 @@ options:
 schema:
   anthropic_api_key: password
   model: str
+  light_model: "str?"
   supabase_url: url
   supabase_service_key: password
   paperless_url: str

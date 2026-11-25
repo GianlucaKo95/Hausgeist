@@ -59,7 +59,7 @@ export function tradingTools(ctx: ToolContext) {
     tool("paper_settings", "Einstellungen: Beobachtungsliste, Uhrzeit des Abendberichts, Abendlauf an/aus.", {
       add_watch: z.array(z.string()).optional(),
       remove_watch: z.array(z.string()).optional(),
-      report_time: z.string().regex(/^\d{2}:\d{2}$/).optional().describe("z. B. 18:00 (nach Xetra-Schluss) oder 22:15 (nach US-Schluss)"),
+      report_time: z.string().regex(/^\d{2}:\d{2}$/).optional().describe("Standard 22:15 (nach US-Schluss); 18:00 nur für reine Xetra-Werte"),
       enabled: z.boolean().optional(),
     }, safe(async (a) => {
       requireAdmin(ctx);

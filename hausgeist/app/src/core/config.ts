@@ -79,6 +79,8 @@ export const Options = z.object({
   model: z.string().default("claude-sonnet-5-5"),
   /** Kleines Modell fürs Langzeitgedächtnis (läuft nach jeder Antwort im Hintergrund) */
   memory_model: z.string().default("claude-haiku-5-5"),
+  /** Günstiges Modell für den Verteiler (Master), einfache Agenten und Routinen. */
+  light_model: z.string().default("claude-haiku-5-5"),
   supabase_url: z.string().url(),
   supabase_service_key: z.string().min(1, "supabase_service_key fehlt"),
   paperless_url: z.string().default(""),

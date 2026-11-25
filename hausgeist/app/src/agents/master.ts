@@ -42,7 +42,7 @@ const SAFETY = `Regeln für alle Agenten:
 - Stufe 3 (Bankdaten/IBAN ändern, Konten oder Postfächer löschen, Passwörter) gibt es nicht. Lehne ab.
 - Antworte auf Deutsch, kurz und konkret.`;
 
-const SUBAGENTS: Record<string, { description: string; prompt: string; server: string; extraTools?: string[]; model?: string }> = {
+const SUBAGENTS: Record<string, { description: string; prompt: string; server: string; extraTools?: string[]; model?: string; light?: boolean }> = {
   finance: {
     description: "Finanzen: Rechnungen, Überweisungen zur Freigabe (auch ohne Rechnung und aus Fotos), Ausgaben, Budgets, Zahlungsfristen, offene Freigaben, Konten und Zahlungsempfänger. Außerdem das Musterdepot (Trading-Strategie nur auf Papier, Abendfazit, Strategie anpassen, Kurse).",
     prompt: `Du bist der Finance-Agent. Du wertest Rechnungen und Ausgaben aus, verwaltest Budgets und behältst Zahlungsfristen im Blick.
@@ -62,6 +62,7 @@ Hochgeladene Dateien verarbeitest du mit process_upload (Einordnung + Weiterleit
     server: "documents",
   },
   shopping: {
+    light: true,
     description: "Einkaufen: Einkaufslisten pro Laden, wiederkehrende Artikel, Preisvergleich, Preisalarme, Wunschlisten, Prospekt-Angebote, Bestellungen zur Freigabe vorlegen.",
     prompt: `Du bist der Shopping-Agent. Du pflegst die Einkaufsliste, erkennst wiederkehrende Einkäufe und vergleichst Produkte und Preise per Websuche.
 Gib bei Vergleichen Händler, Preis inkl. Versand und Link an. Bestellungen legst du nur mit request_order zur Freigabe vor.
@@ -77,6 +78,7 @@ Senden geht nur über request_send_mail. Mails liegen nicht nur im Posteingang: 
     server: "mail",
   },
   household: {
+    light: true,
     description: "Haushalt und Smart Home: Geräte und Räume in Home Assistant steuern, zeitgesteuert schalten, Gerätealarme und Wenn-dann-Regeln, Heizung/Lüftung, Energie mit PV und Speicher, Haushaltsaufgaben, Wartungen.",
     prompt: `Du bist der Household-Agent. Du steuerst freigegebene Home-Assistant-Geräte, optimierst Heizung, Lüftung und Energieverbrauch unter Berücksichtigung von PV-Erzeugung und Batteriespeicher und verwaltest Haushaltsaufgaben und Wartungen.
 Schlage Verbraucher bevorzugt bei PV-Überschuss vor. Sicherheitsrelevante Geräte gehen automatisch zur Freigabe.
@@ -85,6 +87,7 @@ Nutze list_areas für Räume („alle Lichter im Wohnzimmer“). Zeitgesteuertes
     server: "household",
   },
   tv: {
+    light: true,
     description: "Fernsehen mit Couchpotato: Serien, Filme und Live-Sender suchen und abspielen, Streaming-Apps öffnen (Netflix, Prime, YouTube …), Fernbedienung, Lautstärke, Nachrichten auf dem Bildschirm.",
     prompt: `Du bist der TV-Agent. Du steuerst Fernseher und Beamer mit Couchpotato.
 „Spiel X“: erst tv_search, dann den passendsten Treffer mit tv_play (Serien setzen automatisch fort).
@@ -94,6 +97,7 @@ Ist kein Fernseher an, sag, dass der Stick im Standby ist.`,
     server: "tv",
   },
   family: {
+    light: true,
     description: "Persönliches und Familie: Apple-Kalender, Termine, Erinnerungen zu Zeitpunkten (auch wiederkehrend), Familienaufgaben, gemeinsame und persönliche Organisation.",
     prompt: `Du bist der Personal-&-Family-Agent. Du koordinierst den Familienkalender, legst Termine und Aufgaben an und schickst Erinnerungen.
 Unterscheide gemeinsame und persönliche Aufgaben. Prüfe vor neuen Terminen auf Überschneidungen. Zeiten immer in deutscher Zeit (Europe/Berlin) und im 24-Stunden-Format („19:00 Uhr“, nie „7PM/8PM“). Für Termine nutze das Feld „wann“ aus list_events – nicht selbst umrechnen.
@@ -271,7 +275,8 @@ ${SAFETY}`;
         description: def.description,
         prompt: `${def.prompt}\n\nDu arbeitest für ${user.name} (${user.role}). Aktuelle Zeit: ${nowBerlin()} (Europe/Berlin) – verlass dich darauf, nicht auf Zeiten aus früheren Nachrichten.\n\n${SAFETY}`,
         tools: [...names(def.server), ...(def.extraTools ?? [])],
-        model: def.model ?? "inherit",
+        // Einfache Aufgaben (Licht, Einkauf, Kalender, TV) mit dem günstigen Modell, Finanzen/Dokumente/Mail/Recherche mit dem großen
+        model: def.model ?? (def.light ? this.config.light_model : this.config.model),
         maxTurns: 25,
       };
     }
@@ -304,7 +309,8 @@ ${SAFETY}`;
     const q = query({
       prompt,
       options: {
-        model: this.config.model,
+        // Der Verteiler leitet weiter und formuliert – dafür reicht das günstige Modell
+        model: this.config.light_model,
         systemPrompt: await this.systemPrompt(user),
         tools: ["Agent", "WebSearch", "WebFetch"],
         allowedTools,
@@ -329,7 +335,7 @@ ${SAFETY}`;
       if (m.type === "result") {
         sessionId = m.session_id;
         reply = m.subtype === "success" ? m.result : `Das hat nicht geklappt (${m.subtype}).`;
-        await audit({ agent: "master", action: "chat", level: 0, user_id: user.id, result: m.subtype, detail: { turns: m.num_turns, cost_usd: m.total_cost_usd } });
+        await audit({ agent: "master", action: "chat", level: 0, user_id: user.id, result: m.subtype, detail: { turns: m.num_turns, cost_usd: m.total_cost_usd, models: Object.fromEntries(Object.entries(m.modelUsage ?? {}).map(([k, u]) => [k, { in: u.inputTokens, out: u.outputTokens, cache_read: u.cacheReadInputTokens, cache_write: u.cacheCreationInputTokens, usd: u.costUSD }])) } });
       }
     }
     if (sessionId && session) {

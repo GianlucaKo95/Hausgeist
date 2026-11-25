@@ -76,7 +76,7 @@ Realisiert heute: ${r.total} $ in ${r.roundTrips} Verkäufen, je Wert ${JSON.str
 Engine-Protokoll mit Begründungen: ${JSON.stringify(log ?? [])}
 Letzte Fazits: ${JSON.stringify((last ?? []).map((x) => ({ tag: x.day, pnl: x.pnl_usd, fazit: String(x.summary).slice(0, 300) })))}`;
 
-  const raw = await runMiniAgent(config, { system: SYSTEM, prompt, tools: [btTool as never], web: false, maxTurns: 20 });
+  const raw = await runMiniAgent(config, { system: SYSTEM, prompt, tools: [btTool as never], web: false, maxTurns: 20, label: "intraday-fazit" });
   const out = parseJsonObject<{ fazit?: string; vorschlag?: { rules: unknown; note?: string } | null }>(raw);
   if (!out?.fazit) throw new Error("Strategie-Agent lieferte kein auswertbares Fazit");
 

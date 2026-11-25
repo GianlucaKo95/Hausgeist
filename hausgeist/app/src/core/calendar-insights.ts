@@ -94,7 +94,7 @@ Termine der nächsten 8 Tage:
 ${events.map((e) => describe(e, hub.ownerOf(e.calendar))).join("\n")}`;
 
   const res = await llm.messages.create({
-    model: config.model,
+    model: config.light_model,
     max_tokens: 2000,
     system: SYSTEM,
     tools: [tool],

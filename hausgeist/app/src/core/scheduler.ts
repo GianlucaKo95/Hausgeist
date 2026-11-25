@@ -468,6 +468,7 @@ export class Routines {
       const ctx: ToolContext = { ...this.base, user };
       const tools = mailTools(ctx, "private", "communication").filter((t) => ["list_mailboxes", "list_mails", "read_mail"].includes(t.name));
       const summary = await runMiniAgent(this.config, {
+        light: true, label: "mail-ueberblick",
         system: `Du bist der Communication-Agent und erstellst für ${user.name} einen kurzen Mail-Überblick. Du liest nur – nichts senden, verschieben oder markieren.`,
         prompt: `Schau dir die ungelesenen Mails seit ${sinceText} in allen Postfächern an, die du für ${user.name} siehst (ältere ignorieren).
 Fasse in höchstens 8 kurzen Zeilen zusammen:
@@ -493,6 +494,7 @@ Newsletter und Werbung nur als eine Zeile „x Newsletter/Werbung“. Wenn es ni
 Antworte ausschließlich mit JSON: {"price_euro": Zahl oder null, "shop": "Händler", "url": "Link"}`,
         web: true,
         maxTurns: 10,
+        light: true, label: "preiswache",
       });
       const r = parseJsonObject<{ price_euro: number | null; shop?: string; url?: string }>(text);
       const price = r?.price_euro != null ? Math.round(r.price_euro * 100) : null;
@@ -528,6 +530,7 @@ Finde Angebote dieser Woche für diese Artikel. Höchstens 8 Zeilen im Format �
 Nur echte, belegbare Angebote. Wenn nichts Passendes: antworte genau NICHTS.`,
       web: true,
       maxTurns: 20,
+      label: "angebote",
     });
     if (text && !/^NICHTS\b/.test(text)) await this.notifyUsers(await this.adults(), "Angebote diese Woche", text.slice(0, 1500));
   }

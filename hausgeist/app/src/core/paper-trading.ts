@@ -124,7 +124,7 @@ export async function startPortfolio(startCash: number, strategy: string, benchm
   const version = (prev?.strategy_version ?? 0) + 1;
   const row = {
     id: 1, enabled: true, start_cash_eur: startCash, cash_eur: startCash, started_at: new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" }),
-    benchmark, benchmark_units: units, report_time: prev?.report_time ?? "18:00", strategy, strategy_version: version,
+    benchmark, benchmark_units: units, report_time: prev?.report_time ?? "22:15", strategy, strategy_version: version,
     watchlist: watchlist.length ? watchlist : prev?.watchlist ?? [], updated_at: new Date().toISOString(),
   };
   const { error } = await db().from("trading_state").upsert(row);
@@ -202,7 +202,7 @@ Beobachtungsliste: ${s.watchlist.join(", ") || "(leer – such dir passende Wert
 Letzte Trades: ${JSON.stringify(recentTrades ?? [])}
 Letzte Fazits: ${JSON.stringify((lastReports ?? []).map((r) => ({ tag: r.day, wert: r.equity_eur, fazit: String(r.summary).slice(0, 400) })))}`;
 
-  const raw = await runMiniAgent(config, { system: SYSTEM, prompt, web: true, tools: [getQuoteTool as never], maxTurns: 25 });
+  const raw = await runMiniAgent(config, { system: SYSTEM, prompt, web: true, tools: [getQuoteTool as never], maxTurns: 25, label: "musterdepot" });
   const parsed = parseJsonObject<{ trades?: PlannedTrade[]; fazit?: string }>(raw);
   if (!parsed?.fazit) throw new Error("Strategie-Agent hat kein auswertbares Ergebnis geliefert");
 

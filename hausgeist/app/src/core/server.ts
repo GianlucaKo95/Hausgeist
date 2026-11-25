@@ -174,8 +174,10 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
           () => master.takeLegacySession(user.id));
         const shown = [message, ...attachments.map((a) => `📎 ${a.name}`)].filter(Boolean).join("\n");
         await conversations.add(conv, "me", shown);
+        // Ältere Gespräche nicht samt aller Werkzeug-Ausgaben fortsetzen (teuer), sondern mit kurzem Textverlauf neu beginnen
+        const fresh = conv.updated_at && Date.now() - Date.parse(conv.updated_at) < 20 * 60_000;
         const work = master.chat(user, message.slice(0, 8000), attachments, {
-          id: conv.session_id,
+          id: fresh ? conv.session_id : null,
           save: (sid) => conversations.setSession(conv, sid),
           history: () => conversations.historyText(conv.id),
         }).then(
