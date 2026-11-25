@@ -10,9 +10,30 @@ const LEGACY: Record<string, { name: string; url: string; blz: string }> = {
 
 export interface DirectoryBank { blz: string; name: string; bic: string; url: string; location: string }
 
+/**
+ * Das Verzeichnis enthält Server, die es nicht mehr gibt (Volks-/Raiffeisenbanken und Sparda-Banken
+ * sind zu Atruvia umgezogen, ING/DKB haben neue Adressen). Geprüft am 25.11.2026 per DNS.
+ */
+const ATRUVIA = "https://fints1.atruvia.de/cgi-bin/hbciservlet";
+const MOVED_HOSTS: Record<string, string> = {
+  "hbci11.fiducia.de": ATRUVIA,
+  "hbci-pintan.gad.de": ATRUVIA,
+  "fints.bankingonline.de": ATRUVIA,
+  "fints.ing-diba.de": "https://fints.ing.de/fints/",
+  "banking-dkb.s-fints-pt-dkb.de": "https://fints.dkb.de/fints",
+};
+const BLZ_URL: Record<string, string> = {
+  "30060601": "https://fints.apobank.de/FinTs30PinTanHttpGate", // apoBank: eigener Server, nicht Atruvia
+};
+
+export function currentUrl(blz: string, url: string): string {
+  if (BLZ_URL[blz]) return BLZ_URL[blz];
+  try { return MOVED_HOSTS[new URL(url).hostname] ?? url; } catch { return url; }
+}
+
 export function bankByBlz(blz: string): DirectoryBank | null {
   const b = FINTS_BANKS[blz];
-  return b ? { blz, name: b[0], bic: b[1], url: b[2], location: b[3] } : null;
+  return b ? { blz, name: b[0], bic: b[1], url: currentUrl(blz, b[2]), location: b[3] } : null;
 }
 
 /** Suche im Institutsverzeichnis nach Name, Ort, BIC oder Bankleitzahl. */
@@ -26,11 +47,12 @@ export function searchBanks(q: string, limit = 20): DirectoryBank[] {
     const hit = /^\d+$/.test(digits) ? blz.startsWith(digits)
       : `${name} ${location} ${bic}`.toLowerCase().includes(needle);
     if (!hit) continue;
+    const fixed = currentUrl(blz, url);
     // Viele Filial-BLZ derselben Bank mit gleichem Server: nur einmal zeigen (außer bei BLZ-Suche)
-    const key = /^\d+$/.test(digits) ? blz : `${name}|${url}`;
+    const key = /^\d+$/.test(digits) ? blz : `${name}|${fixed}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ blz, name, bic, url, location });
+    out.push({ blz, name, bic, url: fixed, location });
     if (out.length >= limit) break;
   }
   return out;

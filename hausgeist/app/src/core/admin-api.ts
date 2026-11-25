@@ -524,7 +524,13 @@ export async function handleAdmin(req: IncomingMessage, res: ServerResponse, pat
         });
         json(res, 200, result);
       } catch (e) {
-        throw new HttpError(400, e instanceof Error ? e.message : String(e));
+        const msg = e instanceof Error ? e.message : String(e);
+        // „fetch failed“ = Server gar nicht erreichbar (falsche oder veraltete Adresse)
+        if (/fetch failed|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|certificate/i.test(msg)) {
+          const url = body.url || saved?.url || bankInfo(config, bank).url;
+          throw new HttpError(400, `Der FinTS-Server der Bank ist nicht erreichbar (${url}). Die Adresse ist vermutlich veraltet – die richtige steht meist auf der Webseite der Bank unter „FinTS/HBCI“; unter „Erweitert“ eintragen.`);
+        }
+        throw new HttpError(400, msg);
       } finally {
         config.fints_product_id = productBefore;
       }

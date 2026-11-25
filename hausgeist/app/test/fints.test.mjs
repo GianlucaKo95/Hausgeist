@@ -66,3 +66,12 @@ test("Jede Bank: Verzeichnis, Suche und Zuordnung per IBAN", async () => {
   assert.equal(bankInfo(cfg, "blz_35050000").url, "https://banking-rl4.s-fints-pt-rl.de/fints30");
   assert.equal(loginForIban(cfg, "DE02120300000000202051"), null);
 });
+
+test("Veraltete FinTS-Adressen werden auf die aktuellen umgestellt", async () => {
+  const { bankByBlz, searchBanks } = await import("../dist/core/banks.js");
+  assert.equal(bankByBlz("30060601").url, "https://fints.apobank.de/FinTs30PinTanHttpGate");
+  const vr = searchBanks("Volksbank").find((b) => b.url.includes("atruvia"));
+  assert.ok(vr, "Volksbanken über Atruvia");
+  assert.ok(!searchBanks("Volksbank").some((b) => /fiducia|gad\.de/.test(b.url)));
+  assert.equal(bankByBlz("33060592").url, "https://fints1.atruvia.de/cgi-bin/hbciservlet");
+});
