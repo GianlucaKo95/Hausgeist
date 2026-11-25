@@ -5,9 +5,9 @@ on:
   workflow_dispatch:
     inputs:
       carplay:
-        description: "Mit CarPlay-Sprachgespräch bauen (erst nach Freigabe durch Apple)"
+        description: "Mit CarPlay-Sprachgespräch bauen (von Apple freigegeben)"
         type: boolean
-        default: false
+        default: true
   push:
     tags: ["v*"]
 
@@ -37,7 +37,7 @@ jobs:
           ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           ASC_KEY_P8: ${{ secrets.APP_STORE_CONNECT_KEY_P8 }}
-          WITH_CARPLAY: ${{ inputs.carplay && '1' || '0' }}
+          WITH_CARPLAY: ${{ (inputs.carplay == false) && '0' || '1' }}
         run: ./ci/testflight.sh
 
   # Zertifikat dieses Laufs freigeben, sobald Apple den Build verarbeitet hat (max. 2 Distributionszertifikate

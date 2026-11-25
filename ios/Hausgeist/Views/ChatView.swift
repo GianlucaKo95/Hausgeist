@@ -132,6 +132,9 @@ struct ChatView: View {
             }
             .photosPicker(isPresented: $showPhotos, selection: $photoItems, maxSelectionCount: 5, matching: .images)
             .onChange(of: photoItems) { Task { await loadPhotos() } }
+            .onReceive(NotificationCenter.default.publisher(for: .hgOpenVoice)) { _ in
+                if !busy { showVoice = true }
+            }
             .fullScreenCover(isPresented: $showVoice) {
                 VoiceChatView { turns in messages.append(contentsOf: turns) }
             }

@@ -41,6 +41,11 @@ echo "== Zertifikat und Profil erzeugen"
 python3 ../ci/asc.py create "$WORK" "$BUNDLE_ID" "$PROFILE_NAME"
 [ -f "$WORK/ids.json" ] || { echo "::error::Zertifikat/Profil konnten nicht erzeugt werden"; exit 33; }
 PROFILE_UUID=$(python3 -c "import json;print(json.load(open('$WORK/ids.json'))['uuid'])")
+WIDGET_ID="$BUNDLE_ID.widgets"
+WIDGET_PROFILE="$PROFILE_NAME Widgets"
+python3 ../ci/asc.py extra "$WORK" "$WIDGET_ID" "$WIDGET_PROFILE" "Hausgeist Widgets"
+[ -f "$WORK/$WIDGET_ID.json" ] || { echo "::error::Widget-Profil konnte nicht erzeugt werden"; exit 34; }
+WIDGET_UUID=$(python3 -c "import json;print(json.load(open('$WORK/$WIDGET_ID.json'))['uuid'])")
 
 openssl x509 -inform DER -in "$WORK/cert.der" -out "$WORK/cert.pem"
 openssl pkcs12 -export -inkey "$WORK/key.pem" -in "$WORK/cert.pem" -out "$WORK/sign.p12" -passout pass:ci -legacy >/dev/null 2>&1 \
@@ -58,14 +63,17 @@ security find-identity -v -p codesigning "$KC"
 
 for d in "$HOME/Library/MobileDevice/Provisioning Profiles" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
   mkdir -p "$d" && cp "$WORK/profile.mobileprovision" "$d/$PROFILE_UUID.mobileprovision"
+  cp "$WORK/$WIDGET_ID.mobileprovision" "$d/$WIDGET_UUID.mobileprovision"
 done
 
-python3 - "$PROFILE_NAME" <<'PY'
+python3 - "$PROFILE_NAME" "$WIDGET_PROFILE" <<'PY'
 import sys
 s = open("project.yml").read()
-assert "CODE_SIGN_STYLE: Automatic" in s
-s = s.replace("CODE_SIGN_STYLE: Automatic",
-              f'CODE_SIGN_STYLE: Manual\n        CODE_SIGN_IDENTITY: "Apple Distribution"\n        PROVISIONING_PROFILE_SPECIFIER: "{sys.argv[1]}"', 1)
+assert s.count("CODE_SIGN_STYLE: Automatic") == 2
+# erste Stelle = App, zweite = Widget-Erweiterung
+for name in sys.argv[1:3]:
+    s = s.replace("CODE_SIGN_STYLE: Automatic",
+                  f'CODE_SIGN_STYLE: Manual\n        CODE_SIGN_IDENTITY: "Apple Distribution"\n        PROVISIONING_PROFILE_SPECIFIER: "{name}"', 1)
 open("project.yml", "w").write(s)
 PY
 xcodegen generate
@@ -87,7 +95,10 @@ cat > build/ExportOptions.plist <<PL
   <key>teamID</key><string>${APPLE_TEAM_ID}</string>
   <key>signingStyle</key><string>manual</string>
   <key>signingCertificate</key><string>Apple Distribution</string>
-  <key>provisioningProfiles</key><dict><key>${BUNDLE_ID}</key><string>${PROFILE_NAME}</string></dict>
+  <key>provisioningProfiles</key><dict>
+    <key>${BUNDLE_ID}</key><string>${PROFILE_NAME}</string>
+    <key>${WIDGET_ID}</key><string>${WIDGET_PROFILE}</string>
+  </dict>
   <key>uploadSymbols</key><false/>
   <key>manageAppVersionAndBuildNumber</key><false/>
 </dict></plist>

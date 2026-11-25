@@ -8,7 +8,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.10"
-    MARKETING_VERSION: "0.17.0"
+    MARKETING_VERSION: "0.18.0"
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: ""          # in Xcode unter Signing & Capabilities setzen
 targets:
@@ -17,6 +17,8 @@ targets:
     platform: iOS
     sources:
       - Hausgeist
+    dependencies:
+      - target: HausgeistWidgets
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: de.hausgeist.koeven
@@ -59,3 +61,25 @@ targets:
                 UISceneDelegateClassName: $(PRODUCT_MODULE_NAME).CarPlaySceneDelegate
         NSSpeechRecognitionUsageDescription: Deine Sprache wird in Text umgewandelt – wenn möglich direkt auf dem iPhone.
         CFBundleDevelopmentRegion: de
+        # Widget „Mit Hausgeist sprechen“ öffnet hausgeist://voice
+        CFBundleURLTypes:
+          - CFBundleURLName: de.hausgeist.koeven
+            CFBundleURLSchemes: [hausgeist]
+  HausgeistWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - HausgeistWidgets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.hausgeist.koeven.widgets
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
+        SKIP_INSTALL: YES
+    info:
+      path: HausgeistWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: Hausgeist
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension

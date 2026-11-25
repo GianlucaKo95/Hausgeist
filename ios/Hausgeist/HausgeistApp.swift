@@ -48,6 +48,15 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .hgOpenApprovals)) { _ in
             tab = "approvals"
         }
+        // Widget „Mit Hausgeist sprechen“
+        .onOpenURL { url in
+            guard url.scheme == "hausgeist", url.host == "voice" else { return }
+            tab = "chat"
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(300))
+                NotificationCenter.default.post(name: .hgOpenVoice, object: nil)
+            }
+        }
     }
 
     private func loadMe() async {
