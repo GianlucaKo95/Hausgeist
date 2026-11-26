@@ -133,7 +133,7 @@ async function main() {
     if (changed.includes("fritzbox")) fritz.reset();
     if (changed.includes("bring")) bring.reset();
   });
-  startServer(config, master, finance, actions, ha, settings, fints, { fritz, pc, positions, bring, tv });
+  startServer(config, master, finance, actions, ha, settings, fints, { fritz, pc, positions, bring, tv, calendar });
   routines.start();
 
   log.info(`Hausgeist läuft (Zahlungsmodus: ${payments.name})`);

@@ -1,3 +1,4 @@
+import type { CalendarHub } from "../adapters/calendar.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Config } from "./config.js";
 import { canApprove, type AppUser } from "./checks.js";
@@ -80,7 +81,7 @@ async function userFromSupabaseToken(token: string): Promise<AppUser | null> {
  * - App: Authorization: Bearer <Supabase-Access-Token>
  * - Ingress: Home Assistant setzt X-Remote-User-Id.
  */
-export function startServer(config: Config, master: MasterAgent, finance: FinanceAgent, actions: ActionService, ha: HomeAssistant, settings: SettingsStore, fints: FinTSProvider, it: { fritz: FritzBox; pc: WindowsPc; positions: Positions; bring: BringClient; tv: TvHub }): void {
+export function startServer(config: Config, master: MasterAgent, finance: FinanceAgent, actions: ActionService, ha: HomeAssistant, settings: SettingsStore, fints: FinTSProvider, it: { fritz: FritzBox; pc: WindowsPc; positions: Positions; bring: BringClient; tv: TvHub; calendar?: CalendarHub }): void {
   const resolveUser = async (req: IncomingMessage): Promise<AppUser | null> => {
     const auth = req.headers.authorization ?? "";
     if (auth.startsWith("Bearer ")) return userFromSupabaseToken(auth.slice(7));
@@ -92,6 +93,7 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
   };
 
   const conversations = new Conversations(config.dataDir);
+  const overviewEvents = new Map<string, { at: number; events: unknown[] }>();
   // Alte Gespräche bekommen einmalig Themen-Titel (im Hintergrund)
   setTimeout(() => void conversations.backfillTitles(config).catch(() => undefined), 60_000);
   const memory = new LongMemory(config);
@@ -305,6 +307,50 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
       }
       if (req.method === "GET" && path.endsWith("/api/chat/jobs")) {
         return json(res, 200, { jobs: jobs.open(user.id).map((j) => ({ id: j.id, status: j.status })) });
+      }
+
+      // ── Startseite „Zuhause“: Freigaben, nächste Termine, Energie, letzte Gespräche ──
+      if (req.method === "GET" && path.endsWith("/api/overview")) {
+        const now = Date.now();
+        const [approvals, events, energy, recent] = await Promise.all([
+          (async () => {
+            if (user.role === "child") return 0;
+            const [{ count: p }, { count: a }] = await Promise.all([
+              db().from("approvals").select("id", { count: "exact", head: true }).eq("status", "pending"),
+              db().from("actions").select("id", { count: "exact", head: true }).eq("status", "pending"),
+            ]);
+            return (p ?? 0) + (a ?? 0);
+          })().catch(() => 0),
+          (async () => {
+            const cal = it.calendar;
+            if (!cal?.enabled) return null;
+            const hit = overviewEvents.get(user.id);
+            if (hit && now - hit.at < 120_000) return hit.events;
+            const evs = await cal.events(new Date(now - 3_600_000).toISOString(), new Date(now + 48 * 3_600_000).toISOString());
+            const list = evs
+              .filter((e) => (e.allDay ? new Date(e.start).getTime() + 86_400_000 : new Date(e.end ?? e.start).getTime()) > now)
+              .sort((x, y) => x.start.localeCompare(y.start))
+              .slice(0, 5)
+              .map((e) => ({ title: e.title, start: e.start, end: e.end, all_day: e.allDay, location: e.location, calendar: e.calendar }));
+            overviewEvents.set(user.id, { at: now, events: list });
+            return list;
+          })().catch(() => null),
+          (async () => {
+            const out: Record<string, { value: number; unit: string | null }> = {};
+            for (const [key, id] of Object.entries(config.energy ?? {})) {
+              if (!id) continue;
+              const st = await ha.state(id as string).catch(() => null);
+              const v = st ? Number(st.state) : NaN;
+              if (Number.isFinite(v)) out[key] = { value: v, unit: (st?.attributes.unit_of_measurement as string | undefined) ?? null };
+            }
+            return Object.keys(out).length ? out : null;
+          })().catch(() => null),
+          conversations.list(user.id, 3).catch(() => []),
+        ]);
+        return json(res, 200, {
+          approvals, events, energy,
+          recent: recent.map((c) => ({ id: c.id, title: c.title, category: c.category, updated_at: c.updated_at })),
+        });
       }
 
       if (req.method === "GET" && path.endsWith("/api/approvals")) {

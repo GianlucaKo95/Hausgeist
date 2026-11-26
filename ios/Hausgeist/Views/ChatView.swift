@@ -137,6 +137,10 @@ struct ChatView: View {
             .onReceive(NotificationCenter.default.publisher(for: .hgOpenVoice)) { _ in
                 if !busy { showVoice = true }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .hgOpenConversation)) { note in
+                guard let id = note.object as? String, !busy else { return }
+                Task { await openConversation(id) }
+            }
             .fullScreenCover(isPresented: $showVoice) {
                 VoiceChatView { turns in messages.append(contentsOf: turns) }
             }
@@ -157,12 +161,6 @@ struct ChatView: View {
             .navigationTitle("Hausgeist")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { showVoice = true } label: {
-                        Label("Sprachchat", systemImage: "waveform.circle")
-                    }
-                    .disabled(busy)
-                }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button("Verlauf", systemImage: "clock.arrow.circlepath") { showHistory = true }
                         .disabled(busy)
@@ -329,25 +327,56 @@ struct ChatView: View {
                 Button {
                     Task { await toggleDictation() }
                 } label: {
-                    Image(systemName: speech.isListening && !conversation ? "mic.circle.fill" : "mic.circle")
-                        .font(.system(size: 28))
+                    Image(systemName: speech.isListening && !conversation ? "mic.fill" : "mic")
+                        .font(.system(size: 20))
                         .frame(width: 44, height: 44)
-                        .foregroundStyle(speech.isListening && !conversation ? Color.red : Color.accentColor)
+                        .foregroundStyle(speech.isListening && !conversation ? Color.red : Color.secondary)
                 }
                 .disabled(busy || conversation)
-                .accessibilityLabel(speech.isListening ? "Diktat beenden" : "Sprechen")
+                .accessibilityLabel(speech.isListening ? "Diktat beenden" : "Diktieren")
             }
-            Button {
-                speech.stop()
-                Task { await send() }
-            } label: {
-                Image(systemName: "arrow.up.circle.fill").font(.system(size: 28))
-                    .frame(width: 44, height: 44)
+            if canSend {
+                Button {
+                    speech.stop()
+                    Task { await send() }
+                } label: {
+                    Image(systemName: "arrow.up.circle.fill").font(.system(size: 28))
+                        .frame(width: 44, height: 44)
+                }
+                .disabled(busy)
+                .accessibilityLabel("Senden")
+            } else {
+                // Leeres Eingabefeld: direkt in den Sprachchat
+                Button { showVoice = true } label: {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 32, height: 32)
+                        .background(Color.accentColor, in: Circle())
+                        .frame(width: 44, height: 44)
+                }
+                .disabled(busy)
+                .accessibilityLabel("Sprachchat")
             }
-            .accessibilityLabel("Senden")
-            .disabled(busy || (input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty))
         }
         .padding(.horizontal)
+    }
+
+    private var canSend: Bool {
+        !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
+    }
+
+    /// Früheres Gespräch von der Startseite öffnen.
+    private func openConversation(_ id: String) async {
+        let api = APIClient(auth: auth)
+        do {
+            let msgs = try await api.conversationMessages(id)
+            try await api.openConversation(id)
+            Speaker.shared.stop()
+            messages = msgs
+        } catch {
+            messages.append(ChatMessage(sender: .error, text: error.localizedDescription))
+        }
     }
 
     private var VNDocumentCameraViewControllerSupported: Bool { VNDocumentCameraViewController.isSupported }

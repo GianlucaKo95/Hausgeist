@@ -17,7 +17,7 @@ enum AppConfig {
     static var initialTab: String {
         let args = ProcessInfo.processInfo.arguments
         if let i = args.firstIndex(of: "-tab"), i + 1 < args.count { return args[i + 1] }
-        return "chat"
+        return "home"
     }
 
     static let supabaseURL = URL(string: "https://gyjeldwxsicauzxfsisc.supabase.co")!

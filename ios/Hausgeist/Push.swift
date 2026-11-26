@@ -5,6 +5,8 @@ extension Notification.Name {
     /// Tipp auf eine Freigabe-Mitteilung → Freigaben-Tab öffnen.
     static let hgOpenApprovals = Notification.Name("hgOpenApprovals")
     static let hgOpenVoice = Notification.Name("hgOpenVoice")
+    /// Startseite → früheres Gespräch im Chat öffnen (object: Gesprächs-ID)
+    static let hgOpenConversation = Notification.Name("hgOpenConversation")
 }
 
 /// Push-Nachrichten direkt vom Hausgeist (statt über die Home-Assistant-App).

@@ -28,6 +28,13 @@ struct RootView: View {
 
     var body: some View {
         TabView(selection: $tab) {
+            HomeView(me: me,
+                     onVoice: { openChat(then: .hgOpenVoice) },
+                     onChat: { tab = "chat" },
+                     onApprovals: { tab = "approvals" },
+                     onConversation: { id in openChat(then: .hgOpenConversation, object: id) })
+                .tabItem { Label("Zuhause", systemImage: "house") }
+                .tag("home")
             ChatView(me: me)
                 .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }
                 .tag("chat")
@@ -51,11 +58,16 @@ struct RootView: View {
         // Widget „Mit Hausgeist sprechen“
         .onOpenURL { url in
             guard url.scheme == "hausgeist", url.host == "voice" else { return }
-            tab = "chat"
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(300))
-                NotificationCenter.default.post(name: .hgOpenVoice, object: nil)
-            }
+            openChat(then: .hgOpenVoice)
+        }
+    }
+
+    /// Zum Chat wechseln und ihm danach etwas sagen (Sprachchat öffnen, Gespräch laden).
+    private func openChat(then name: Notification.Name, object: Any? = nil) {
+        tab = "chat"
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(300))
+            NotificationCenter.default.post(name: name, object: object)
         }
     }
 

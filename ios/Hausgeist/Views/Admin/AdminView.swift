@@ -6,27 +6,35 @@ struct AdminSection: View {
 
     var body: some View {
         if let me, me.role != "child" {
-            Section {
-                if me.role == "admin" {
-                    NavigationLink { PeopleView() } label: { Label("Haushalt", systemImage: "person.3") }
+            if me.role == "admin" {
+                Section("Haushalt") {
+                    NavigationLink { PeopleView() } label: { Label("Personen", systemImage: "person.2") }
+                    NavigationLink { CalendarsAdminView() } label: { Label("Kalender", systemImage: "calendar") }
+                    NavigationLink { BringView() } label: { Label("Einkaufslisten", systemImage: "cart") }
+                    NavigationLink { RoutinesView() } label: { Label("Routinen und Ablage", systemImage: "clock.arrow.circlepath") }
                 }
+            }
+            Section {
                 NavigationLink { MailboxesView(me: me) } label: {
                     Label(me.role == "admin" ? "Postfächer" : "Meine Postfächer", systemImage: "envelope")
                 }
                 if me.role == "admin" {
-                    NavigationLink { CalendarsAdminView() } label: { Label("Kalender", systemImage: "calendar") }
-                    NavigationLink { AccountsView() } label: { Label("Konten & Empfänger", systemImage: "eurosign.bank.building") }
-                    NavigationLink { SmartHomeView() } label: { Label("Smart Home", systemImage: "house") }
-                    NavigationLink { BringView() } label: { Label("Einkaufslisten (Bring!)", systemImage: "cart") }
-                    NavigationLink { TradingView() } label: { Label("Trading (Paper)", systemImage: "chart.line.uptrend.xyaxis") }
-                    NavigationLink { NetworkPcView() } label: { Label("Netzwerk & PC", systemImage: "desktopcomputer") }
-                    NavigationLink { TvView() } label: { Label("Fernseher (Couchpotato)", systemImage: "tv") }
-                    NavigationLink { RoutinesView() } label: { Label("Routinen & Ablage", systemImage: "clock.arrow.circlepath") }
+                    NavigationLink { AccountsView() } label: { Label("Konten und Empfänger", systemImage: "eurosign.bank.building") }
+                    NavigationLink { TradingView() } label: { Label("Trading (Spielgeld)", systemImage: "chart.line.uptrend.xyaxis") }
                 }
             } header: {
-                Text("Verwaltung")
-            } footer: {
-                Text("Passwörter werden nur auf dem Home-Assistant-Server gespeichert und nie wieder angezeigt.")
+                Text(me.role == "admin" ? "Post und Geld" : "Post")
+            }
+            if me.role == "admin" {
+                Section {
+                    NavigationLink { SmartHomeView() } label: { Label("Smart Home", systemImage: "house") }
+                    NavigationLink { TvView() } label: { Label("Fernseher", systemImage: "tv") }
+                    NavigationLink { NetworkPcView() } label: { Label("Netzwerk und PC", systemImage: "desktopcomputer") }
+                } header: {
+                    Text("Geräte")
+                } footer: {
+                    Text("Passwörter werden nur auf dem Home-Assistant-Server gespeichert und nie wieder angezeigt")
+                }
             }
         }
     }

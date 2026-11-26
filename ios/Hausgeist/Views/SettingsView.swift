@@ -19,45 +19,35 @@ struct SettingsView: View {
                 Section {
                     LabeledContent("Angemeldet als", value: me?.name ?? auth.session?.email ?? "—")
                     if let role = me?.role { LabeledContent("Rolle", value: roleName(role)) }
-                }
-                Section {
-                    TextField("http://homeassistant.tailXXXX.ts.net:8099", text: $server)
-                        .keyboardType(.URL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    Button {
-                        Task { await saveAndCheck() }
-                    } label: {
-                        if checking { ProgressView() } else { Text("Speichern und testen") }
+                    if let host = AppConfig.serverURL?.host() {
+                        NavigationLink {
+                            Form { serverSection }
+                                .navigationTitle("Server")
+                                .navigationBarTitleDisplayMode(.inline)
+                        } label: {
+                            LabeledContent("Server", value: host)
+                        }
                     }
-                    if let status { Text(status).font(.footnote).foregroundStyle(.secondary) }
-                } header: {
-                    Text("Server")
-                } footer: {
-                    Text("Adresse des Hausgeists, z. B. https://homegeist.heimdns.de")
                 }
+                if AppConfig.serverURL == nil { serverSection }
                 AdminSection(me: me)
                 Section {
-                    NavigationLink { MemoriesView() } label: { Label("Was der Hausgeist über mich weiß", systemImage: "brain") }
-                } footer: {
-                    Text("Der Hausgeist merkt sich beim Chatten Wichtiges über dich und nutzt es in jedem Gespräch. Hier kannst du einzelne Punkte oder alles löschen.")
-                }
-                Section {
-                    Toggle("Standort für Erinnerungen", isOn: $shareLocation)
-                        .onChange(of: shareLocation) {
-                            if shareLocation { LocationService.shared.start() } else { LocationService.shared.stop() }
-                        }
+                    NavigationLink { MemoriesView() } label: {
+                        Label("Was der Hausgeist über mich weiß", systemImage: "brain")
+                    }
+                    Toggle(isOn: $shareLocation) {
+                        Label("Standort für Erinnerungen", systemImage: "location")
+                    }
+                    .onChange(of: shareLocation) {
+                        if shareLocation { LocationService.shared.start() } else { LocationService.shared.stop() }
+                    }
+                    Toggle(isOn: $speakReplies) {
+                        Label("Antworten im Chat vorlesen", systemImage: "speaker.wave.2")
+                    }
                 } header: {
-                    Text("Standort")
+                    Text("Für mich")
                 } footer: {
-                    Text("Für „Erinnere mich, wenn ich das Haus verlasse“ und „Jetzt losfahren zu Termin XY“. Bitte „Immer“ erlauben. Die App meldet nur größere Ortswechsel und das Betreten/Verlassen eurer Orte aus Home Assistant – akkuschonend. Gespeichert wird nur der letzte Standort, auf dem Pi.")
-                }
-                Section {
-                    Toggle("Antworten vorlesen", isOn: $speakReplies)
-                } header: {
-                    Text("Sprache")
-                } footer: {
-                    Text("Im Gesprächsmodus (Wellen-Symbol im Chat) liest der Hausgeist immer vor. Mit Siri: „Hey Siri, frag Hausgeist“ – auch im Auto über CarPlay.")
+                    Text("Den Standort braucht der Hausgeist für Erinnerungen beim Verlassen oder Ankommen und für „Jetzt losfahren“. Bitte „Immer“ erlauben. Gespeichert wird nur der letzte Standort, auf dem Pi. Im Sprachchat liest er immer vor, mit Siri: „Hey Siri, frag Hausgeist“.")
                 }
                 Section {
                     Button("Abmelden", role: .destructive) {
@@ -81,6 +71,25 @@ struct SettingsView: View {
                 default: MailboxesView(me: me ?? Me(id: "u1", name: "Gianluca", role: "admin"))
                 }
             }
+        }
+    }
+
+    @ViewBuilder private var serverSection: some View {
+        Section {
+            TextField("https://homegeist.heimdns.de", text: $server)
+                .keyboardType(.URL)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button {
+                Task { await saveAndCheck() }
+            } label: {
+                if checking { ProgressView() } else { Text("Speichern und testen") }
+            }
+            if let status { Text(status).font(.footnote).foregroundStyle(.secondary) }
+        } header: {
+            Text("Server")
+        } footer: {
+            Text("Adresse des Hausgeists, z. B. https://homegeist.heimdns.de oder die Tailscale-Adresse mit Port 8099")
         }
     }
 

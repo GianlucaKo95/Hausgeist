@@ -38,4 +38,17 @@ enum DemoData {
                            amount_cents: nil, can_decide: true),
         ]
     )
+
+    static let overview = Overview(
+        approvals: 2,
+        events: [
+            .init(title: "Elternabend Kita", start: "2026-11-26T19:30:00+01:00", end: "2026-11-26T21:00:00+01:00", all_day: false, location: "Kita Sonnenschein", calendar: "Familie"),
+            .init(title: "Zahnarzt Nelio", start: "2026-11-27T08:15:00+01:00", end: "2026-11-27T09:00:00+01:00", all_day: false, location: nil, calendar: "Annika"),
+            .init(title: "Altpapier", start: "2026-11-27", end: nil, all_day: true, location: nil, calendar: "Müllabfuhr"),
+        ],
+        energy: ["pv_power": .init(value: 2140, unit: "W"), "battery_soc": .init(value: 76, unit: "%"),
+                 "house_power": .init(value: 640, unit: "W"), "grid_power": .init(value: -1310, unit: "W")],
+        recent: [.init(id: "d1", title: "Verträge kündigen", category: "Dokumente", updated_at: "2026-11-24T08:00:00Z"),
+                 .init(id: "d2", title: "Hotel Rom Ostern", category: "Recherche", updated_at: "2026-11-20T18:30:00Z")]
+    )
 }
