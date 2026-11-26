@@ -41,6 +41,16 @@ async function readBody(req: IncomingMessage, limit = 64_000): Promise<Record<st
   return chunks.length ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : {};
 }
 
+class AuthUnavailable extends Error {}
+
+/** Ablaufzeit (ms) aus dem JWT – nur für den Cache, die Echtheit prüft Supabase. */
+function jwtExp(token: string): number {
+  try {
+    const payload = JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8")) as { exp?: number };
+    return (payload.exp ?? 0) * 1000;
+  } catch { return 0; }
+}
+
 /** Kurzer Cache, damit nicht jede Anfrage Supabase Auth fragt. */
 const tokenCache = new Map<string, { userId: string; until: number }>();
 
@@ -54,7 +64,17 @@ async function userFromSupabaseToken(token: string): Promise<AppUser | null> {
   if (cached && cached.until > Date.now()) return users.find((u) => u.id === cached.userId) ?? null;
 
   const { data, error } = await db().auth.getUser(token);
-  if (error || !data.user) return null;
+  if (error || !data.user) {
+    // Supabase nicht erreichbar (Zeitüberschreitung, 5xx) ≠ ungültiges Login: dann 503 statt 401,
+    // damit die App nicht abmeldet. Ein schon geprüftes Token gilt in dem Fall bis zu seinem Ablauf weiter.
+    const status = (error as { status?: number } | null)?.status ?? 0;
+    const unreachable = !!error && (status === 0 || status >= 500);
+    if (unreachable) {
+      if (cached && jwtExp(token) > Date.now()) return users.find((u) => u.id === cached.userId) ?? null;
+      throw new AuthUnavailable();
+    }
+    return null;
+  }
   const authId = data.user.id;
   const email = data.user.email?.toLowerCase() ?? null;
 
@@ -71,7 +91,8 @@ async function userFromSupabaseToken(token: string): Promise<AppUser | null> {
     if (linked) log.info(`Login verknüpft: ${email}`);
   }
   if (!row) return null;
-  tokenCache.set(token, { userId: row.id, until: Date.now() + 60_000 });
+  // Geprüftes Token bis kurz vor seinem Ablauf merken (höchstens 10 Minuten), statt jede Minute Supabase zu fragen
+  tokenCache.set(token, { userId: row.id, until: Math.min(jwtExp(token) - 30_000, Date.now() + 600_000) });
   const fresh = await listUsers();
   return fresh.find((u) => u.id === row!.id) ?? null;
 }
@@ -145,7 +166,13 @@ export function startServer(config: Config, master: MasterAgent, finance: Financ
         return json(res, 404, { error: "Unbekannt" });
       }
 
-      const user = await resolveUser(req);
+      let user: AppUser | null;
+      try {
+        user = await resolveUser(req);
+      } catch (e) {
+        if (e instanceof AuthUnavailable) return json(res, 503, { error: "Anmeldung kann gerade nicht geprüft werden – gleich nochmal versuchen" });
+        throw e;
+      }
       if (!user) return json(res, 401, { error: "Nicht angemeldet oder nicht als Haushaltsmitglied eingetragen." });
 
       if (req.method === "GET" && path.endsWith("/api/me")) return json(res, 200, { id: user.id, name: user.name, role: user.role });

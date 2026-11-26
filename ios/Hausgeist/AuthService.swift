@@ -47,9 +47,12 @@ final class AuthService {
         store(s)
     }
 
-    func signOut() async {
-        if let token = session?.accessToken {
-            var req = URLRequest(url: AppConfig.supabaseURL.appending(path: "auth/v1/logout"))
+    /// Abmelden. Nur dieses Gerät – andere Geräte bleiben angemeldet.
+    func signOut(remote: Bool = true) async {
+        if remote, let token = session?.accessToken,
+           var comps = URLComponents(url: AppConfig.supabaseURL.appending(path: "auth/v1/logout"), resolvingAgainstBaseURL: false) {
+            comps.queryItems = [URLQueryItem(name: "scope", value: "local")]
+            var req = URLRequest(url: comps.url ?? AppConfig.supabaseURL.appending(path: "auth/v1/logout"))
             req.httpMethod = "POST"
             req.setValue(AppConfig.supabasePublishableKey, forHTTPHeaderField: "apikey")
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -59,26 +62,59 @@ final class AuthService {
         Keychain.delete(keychainKey)
     }
 
+    /// Laufende Erneuerung – alle gleichzeitigen Anfragen warten auf dieselbe,
+    /// damit derselbe Refresh-Token nie doppelt benutzt wird.
+    private var refreshTask: Task<AuthSession, Error>?
+
+    /// Hat ein anderer Teil (Widget, Siri, Mitteilungs-Knöpfe) die Sitzung schon erneuert? Dann die neuere nehmen.
+    private func adoptNewerStored() {
+        guard !AppConfig.isDemo, let data = Keychain.load(keychainKey),
+              let stored = try? JSONDecoder().decode(AuthSession.self, from: data),
+              stored.expiresAt > (session?.expiresAt ?? .distantPast) else { return }
+        session = stored
+    }
+
     /// Gültiges Access-Token, bei Bedarf erneuert.
     func validAccessToken(forceRefresh: Bool = false) async throws -> String {
-        // App, Siri und Mitteilungs-Knöpfe teilen sich das Login. Hat ein anderer Teil
-        // die Sitzung schon erneuert, die neuere nehmen – ein alter Refresh-Token würde
-        // sonst von Supabase als Wiederverwendung erkannt und die Sitzung beendet.
-        if !AppConfig.isDemo, let data = Keychain.load(keychainKey),
-           let stored = try? JSONDecoder().decode(AuthSession.self, from: data),
-           stored.expiresAt > (session?.expiresAt ?? .distantPast) {
-            session = stored
-        }
+        adoptNewerStored()
         guard let s = session else { throw AuthError.server("Nicht angemeldet") }
         if !forceRefresh && s.expiresAt.timeIntervalSinceNow > 60 { return s.accessToken }
+        if let running = refreshTask { return try await running.value.accessToken }
+
+        let rt = s.refreshToken, email = s.email
+        let task = Task { try await self.refreshWithRetry(rt, email: email) }
+        refreshTask = task
+        defer { refreshTask = nil }
         do {
-            let fresh = try await tokenRequest(grantType: "refresh_token", body: ["refresh_token": s.refreshToken], email: s.email)
+            let fresh = try await task.value
             store(fresh)
             return fresh.accessToken
         } catch AuthError.invalidCredentials {
-            await signOut()
-            throw AuthError.server("Sitzung abgelaufen – bitte neu anmelden.")
+            // Vielleicht hat ein anderer Teil der App inzwischen erneuert – dann ist nichts verloren.
+            adoptNewerStored()
+            if let cur = session, cur.refreshToken != rt {
+                return cur.accessToken
+            }
+            await signOut(remote: false)
+            throw AuthError.server("Sitzung abgelaufen – bitte neu anmelden")
         }
+    }
+
+    /// Netzwerkfehler (Funkloch, WLAN-Wechsel) beenden nie die Sitzung – kurz warten und noch einmal.
+    private func refreshWithRetry(_ refreshToken: String, email: String) async throws -> AuthSession {
+        var delay: UInt64 = 1_000_000_000
+        for attempt in 0..<3 {
+            do {
+                return try await tokenRequest(grantType: "refresh_token", body: ["refresh_token": refreshToken], email: email)
+            } catch AuthError.invalidCredentials {
+                throw AuthError.invalidCredentials
+            } catch {
+                if attempt == 2 { throw error }
+                try? await Task.sleep(nanoseconds: delay)
+                delay *= 2
+            }
+        }
+        throw AuthError.server("Anmeldung gerade nicht erreichbar")
     }
 
     private func store(_ s: AuthSession) {

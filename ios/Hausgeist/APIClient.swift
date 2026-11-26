@@ -43,10 +43,12 @@ private struct ServerError: Decodable { let error: String? }
 enum APIError: LocalizedError {
     case noServer
     case http(Int, String)
+    case offline
 
     var errorDescription: String? {
         switch self {
         case .noServer: return "Bitte in den Einstellungen die Serveradresse eintragen."
+        case .offline: return "Hausgeist gerade nicht erreichbar – prüfe die Internetverbindung, ich versuche es gleich wieder"
         case .http(let code, let msg): return msg.isEmpty ? "Serverfehler (\(code))" : msg
         }
     }
@@ -57,10 +59,17 @@ enum APIError: LocalizedError {
 struct APIClient {
     let auth: AuthService
 
+    private static let transient: Set<URLError.Code> = [
+        .networkConnectionLost, .notConnectedToInternet, .timedOut, .cannotConnectToHost,
+        .cannotFindHost, .dnsLookupFailed, .secureConnectionFailed,
+    ]
+
     private static let session: URLSession = {
         let cfg = URLSessionConfiguration.default
-        cfg.timeoutIntervalForRequest = 600   // Der Master-Agent braucht für große Aufgaben Zeit.
+        // Längste Pause ohne Daten – Chat-Antworten laufen als Auftrag im Hintergrund, nichts wartet mehr minutenlang.
+        cfg.timeoutIntervalForRequest = 120
         cfg.timeoutIntervalForResource = 600
+        cfg.waitsForConnectivity = false
         return URLSession(configuration: cfg)
     }()
 
@@ -248,8 +257,24 @@ struct APIClient {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.httpBody = try JSONEncoder().encode(body)
         }
-        let (data, response) = try await Self.session.data(for: req)
+        let result: (Data, URLResponse)
+        do {
+            result = try await Self.session.data(for: req)
+        } catch let e as URLError where Self.transient.contains(e.code) {
+            // Netzwechsel (WLAN ↔ Mobilfunk) reißt alte Verbindungen ab: einmal kurz warten und neu versuchen.
+            // Nur bei Abfragen (GET) – eine Aktion soll nie doppelt ausgeführt werden.
+            guard retry, method == "GET" else { throw APIError.offline }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            do { return try await request(path, method: method, body: body, retry: false) }
+            catch let e2 as URLError where Self.transient.contains(e2.code) { throw APIError.offline }
+        }
+        let (data, response) = result
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        // 503 = Server erreichbar, kann die Anmeldung aber gerade nicht prüfen (z. B. Supabase hängt) – kein Abmelden
+        if status == 503 && retry && method == "GET" {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            return try await request(path, method: method, body: body, retry: false)
+        }
         if status == 401 && retry {
             _ = try await auth.validAccessToken(forceRefresh: true)
             return try await request(path, method: method, body: body, retry: false)
