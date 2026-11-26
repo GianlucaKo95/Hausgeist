@@ -11,12 +11,11 @@ struct LoginView: View {
         NavigationStack {
             Form {
                 Section {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Image(systemName: "house.lodge")
-                            .font(.system(size: 40))
-                            .foregroundStyle(.tint)
-                        Text("Hausgeist").font(.largeTitle.bold())
-                        Text("Melde dich mit deinem Haushaltskonto an.")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Ghost(width: 36, fill: Color.accentColor, eyes: Color(.secondarySystemGroupedBackground))
+                            .padding(.bottom, 12)
+                        Text("Hausgeist").font(.largeTitle.weight(.semibold))
+                        Text("Melde dich mit deinem Haushaltskonto an")
                             .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 8)
@@ -38,7 +37,7 @@ struct LoginView: View {
                     Button {
                         Task { await signIn() }
                     } label: {
-                        if busy { ProgressView() } else { Text("Anmelden").bold() }
+                        if busy { ProgressView() } else { Text("Anmelden").fontWeight(.medium) }
                     }
                     .disabled(busy || email.isEmpty || password.isEmpty)
                 }

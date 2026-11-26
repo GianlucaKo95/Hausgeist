@@ -69,9 +69,11 @@ struct ChatView: View {
                         }
                         if busy {
                             HStack(spacing: 8) {
-                                ProgressView()
+                                GhostWorking(width: 12)
                                 Text("Hausgeist arbeitet …").foregroundStyle(.secondary)
                             }
+                            .font(.subheadline)
+                            .padding(.vertical, 4)
                             .id("busy")
                         }
                     }
@@ -172,21 +174,47 @@ struct ChatView: View {
     }
 
     private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(me.map { "Hallo \($0.name)!" } ?? "Hallo!").font(.title2.bold())
-            Text("Was soll ich erledigen? Zum Beispiel:").foregroundStyle(.secondary)
-            ForEach(examples, id: \.self) { ex in
-                Button(ex) { input = ex; focused = true }
-                    .buttonStyle(.bordered)
+        VStack(alignment: .leading, spacing: 0) {
+            Ghost(width: 32, fill: Color.accentColor, eyes: Color(.systemBackground))
+                .padding(.bottom, 16)
+            Text("Was soll ich erledigen?")
+                .font(.title2.weight(.semibold))
+            Text("Zum Beispiel")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .padding(.top, 4)
+                .padding(.bottom, 8)
+            VStack(spacing: 0) {
+                ForEach(examples, id: \.self) { ex in
+                    Button {
+                        input = ex
+                        focused = true
+                    } label: {
+                        HStack(spacing: 12) {
+                            Text(ex)
+                                .foregroundStyle(.primary)
+                                .multilineTextAlignment(.leading)
+                            Spacer(minLength: 8)
+                            Image(systemName: "arrow.up.left")
+                                .font(.footnote)
+                                .foregroundStyle(.tertiary)
+                        }
+                        .padding(.vertical, 12)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    if ex != examples.last { Divider() }
+                }
             }
             Button {
                 showHistory = true
             } label: {
                 Label("Früheres Gespräch fortsetzen", systemImage: "clock.arrow.circlepath")
+                    .font(.subheadline)
             }
-            .padding(.top, 8)
+            .padding(.top, 16)
         }
-        .padding(.top, 24)
+        .padding(.top, 32)
     }
 
     private var examples: [String] {
@@ -268,7 +296,7 @@ struct ChatView: View {
     }
 
     private var inputRow: some View {
-        HStack(alignment: .bottom, spacing: 8) {
+        HStack(alignment: .bottom, spacing: 4) {
             Menu {
                 if VNDocumentCameraViewControllerSupported {
                     Button("Dokument scannen", systemImage: "doc.viewfinder") { showScanner = true }
@@ -276,7 +304,8 @@ struct ChatView: View {
                 Button("Foto auswählen", systemImage: "photo.on.rectangle") { showPhotos = true }
                 Button("Datei (PDF) auswählen", systemImage: "folder") { showFiles = true }
             } label: {
-                Image(systemName: "plus.circle.fill").font(.system(size: 30))
+                Image(systemName: "plus.circle.fill").font(.system(size: 28))
+                    .frame(width: 44, height: 44)
             }
             .disabled(busy || me?.role == "child")
             .accessibilityLabel("Anhang hinzufügen")
@@ -284,14 +313,16 @@ struct ChatView: View {
                 .lineLimit(1...6)
                 .focused($focused)
                 .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+                .padding(.vertical, 10)
+                .frame(minHeight: 44)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 22))
+                .padding(.horizontal, 4)
             if focused && !speech.isListening {
                 // Beim Tippen: Tastatur einklappen statt Mikrofon
                 Button { focused = false } label: {
                     Image(systemName: "keyboard.chevron.compact.down")
                         .font(.system(size: 22))
-                        .frame(width: 30, height: 30)
+                        .frame(width: 44, height: 44)
                 }
                 .accessibilityLabel("Tastatur ausblenden")
             } else {
@@ -299,7 +330,8 @@ struct ChatView: View {
                     Task { await toggleDictation() }
                 } label: {
                     Image(systemName: speech.isListening && !conversation ? "mic.circle.fill" : "mic.circle")
-                        .font(.system(size: 30))
+                        .font(.system(size: 28))
+                        .frame(width: 44, height: 44)
                         .foregroundStyle(speech.isListening && !conversation ? Color.red : Color.accentColor)
                 }
                 .disabled(busy || conversation)
@@ -309,8 +341,10 @@ struct ChatView: View {
                 speech.stop()
                 Task { await send() }
             } label: {
-                Image(systemName: "arrow.up.circle.fill").font(.system(size: 32))
+                Image(systemName: "arrow.up.circle.fill").font(.system(size: 28))
+                    .frame(width: 44, height: 44)
             }
+            .accessibilityLabel("Senden")
             .disabled(busy || (input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty))
         }
         .padding(.horizontal)
@@ -360,7 +394,7 @@ struct ChatView: View {
         guard !text.isEmpty || !files.isEmpty else { return }
         input = ""
         attachments = []
-        let shown = ([text] + files.map { "📎 \($0.name)" }).filter { !$0.isEmpty }.joined(separator: "\n")
+        let shown = ([text] + files.map { "Anhang: \($0.name)" }).filter { !$0.isEmpty }.joined(separator: "\n")
         messages.append(ChatMessage(sender: .me, text: shown))
         busy = true
         defer { busy = false }

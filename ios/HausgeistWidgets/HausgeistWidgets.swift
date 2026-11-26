@@ -22,30 +22,28 @@ struct TalkWidgetView: View {
         case .accessoryCircular:
             ZStack {
                 AccessoryWidgetBackground()
-                Image(systemName: "waveform").font(.title2.weight(.semibold))
+                Ghost(width: 22, fill: .white, eyes: .black)
             }
             .widgetAccentable()
         case .accessoryRectangular:
-            HStack(spacing: 6) {
-                Image(systemName: "waveform.circle.fill").font(.title2)
-                VStack(alignment: .leading) {
+            HStack(spacing: 8) {
+                Ghost(width: 18, fill: .white, eyes: .black)
+                    .widgetAccentable()
+                VStack(alignment: .leading, spacing: 0) {
                     Text("Hausgeist").font(.headline)
                     Text("Tippen und sprechen").font(.caption)
                 }
             }
         default:
-            VStack(spacing: 10) {
-                ZStack {
-                    Circle()
-                        .fill(LinearGradient(colors: [.cyan, .blue], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 64, height: 64)
-                    Image(systemName: "waveform").font(.system(size: 28, weight: .semibold)).foregroundStyle(.white)
-                }
+            VStack(alignment: .leading, spacing: 0) {
+                Ghost(width: 36)
+                Spacer(minLength: 8)
                 Text("Mit Hausgeist sprechen")
-                    .font(.subheadline.weight(.semibold))
-                    .multilineTextAlignment(.center)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.white)
                     .minimumScaleFactor(0.8)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
     }
 }
@@ -54,13 +52,11 @@ struct TalkWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "de.hausgeist.talk", provider: TalkProvider()) { entry in
             TalkWidgetView(entry: entry)
-                .containerBackground(for: .widget) {
-                    LinearGradient(colors: [Color(red: 0.07, green: 0.09, blue: 0.16), .black], startPoint: .top, endPoint: .bottom)
-                }
+                .containerBackground(for: .widget) { HGColor.night }
                 .widgetURL(URL(string: "hausgeist://voice"))
         }
         .configurationDisplayName("Mit Hausgeist sprechen")
-        .description("Startet direkt den Sprachchat – auch in CarPlay.")
+        .description("Startet direkt den Sprachchat, auch in CarPlay")
         .supportedFamilies([.systemSmall, .accessoryCircular, .accessoryRectangular])
     }
 }

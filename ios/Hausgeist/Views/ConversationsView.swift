@@ -17,7 +17,7 @@ struct ConversationsView: View {
                 if let error { Text(error).foregroundStyle(.red) }
                 if loaded && items.isEmpty && error == nil {
                     ContentUnavailableView("Noch keine Gespräche", systemImage: "bubble.left.and.bubble.right",
-                                           description: Text("Gespräche erscheinen hier, sobald du dem Hausgeist schreibst."))
+                                           description: Text("Gespräche erscheinen hier, sobald du dem Hausgeist schreibst"))
                 }
                 // Nach Bereich gegliedert (Fach-Agent), Bereiche nach letzter Aktivität
                 ForEach(sections, id: \.name) { section in

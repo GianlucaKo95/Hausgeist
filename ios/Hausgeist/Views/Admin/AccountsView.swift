@@ -37,7 +37,7 @@ struct AccountsView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             HStack {
                                 Text(a.label).foregroundStyle(.primary)
-                                if a.is_default { Text("Standard").font(.caption2.bold()).padding(.horizontal, 6).padding(.vertical, 2).background(.blue.opacity(0.15), in: Capsule()) }
+                                if a.is_default { Text("Standard").font(.caption2.weight(.medium)).foregroundStyle(.secondary).padding(.horizontal, 6).padding(.vertical, 2).background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 4)) }
                             }
                             Text("\(bankName(a.bank)) · \(formatIBAN(a.iban))").font(.caption).foregroundStyle(.secondary)
                         }

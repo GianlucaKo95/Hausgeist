@@ -20,7 +20,7 @@ struct ApprovalsView: View {
                 if let list {
                     if list.payments.isEmpty && list.actions.isEmpty {
                         ContentUnavailableView("Alles erledigt", systemImage: "checkmark.seal",
-                                               description: Text("Keine offenen Freigaben."))
+                                               description: Text("Keine offenen Freigaben"))
                     }
                     if !list.payments.isEmpty {
                         Section("Zahlungen") {
@@ -79,7 +79,7 @@ struct ApprovalsView: View {
                             approve: { pendingPayment = p },
                             reject: { Task { await decide(payment: p, approve: false) } })
             if !p.can_decide {
-                Text("Das darf nur der Admin freigeben.").font(.footnote).foregroundStyle(.secondary)
+                Text("Das darf nur der Admin freigeben").font(.footnote).foregroundStyle(.secondary)
             }
         }
         .padding(.vertical, 4)
@@ -94,7 +94,7 @@ struct ApprovalsView: View {
                             approve: { pendingAction = a },
                             reject: { Task { await decide(action: a, approve: false) } })
             if !a.can_decide {
-                Text("Darüber entscheidet jemand anderes.").font(.footnote).foregroundStyle(.secondary)
+                Text("Darüber entscheidet jemand anderes").font(.footnote).foregroundStyle(.secondary)
             }
         }
         .padding(.vertical, 4)
@@ -116,13 +116,13 @@ struct ApprovalsView: View {
     private func payeeBadge(_ status: String) -> some View {
         let (text, color): (String, Color) = switch status {
         case "known": ("Bekannte IBAN", .green)
-        case "iban_changed": ("IBAN GEÄNDERT", .red)
+        case "iban_changed": ("IBAN geändert", .red)
         default: ("Neuer Empfänger", .orange)
         }
         return Text(text)
-            .font(.caption.bold())
-            .padding(.horizontal, 8).padding(.vertical, 3)
-            .background(color.opacity(0.15), in: Capsule())
+            .font(.caption.weight(.medium))
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
             .foregroundStyle(color)
     }
 

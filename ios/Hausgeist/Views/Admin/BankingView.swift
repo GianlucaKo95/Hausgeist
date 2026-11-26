@@ -146,7 +146,7 @@ struct BankLoginForm: View {
                     }
                     .disabled(testing || login.isEmpty || (pin.isEmpty && !bank.pin_set))
                     if testing {
-                        Text("Falls die Bank fragt: Freigabe in der Banking-App bestätigen.").font(.caption).foregroundStyle(.secondary)
+                        Text("Falls die Bank fragt: Freigabe in der Banking-App bestätigen").font(.caption).foregroundStyle(.secondary)
                     }
                     if let result {
                         ForEach(result.accounts, id: \.self) { a in
@@ -243,7 +243,7 @@ struct BankSearchView: View {
                     }
                 }
                 if !searching && results.isEmpty && query.count >= 2 {
-                    Text("Keine Bank mit Online-Banking-Zugang (FinTS) gefunden.").foregroundStyle(.secondary)
+                    Text("Keine Bank mit Online-Banking-Zugang (FinTS) gefunden").foregroundStyle(.secondary)
                 }
             }
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Name, Ort, Bankleitzahl oder IBAN")

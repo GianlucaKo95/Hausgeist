@@ -332,20 +332,23 @@ struct VoiceChatView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(colors: [Color(red: 0.05, green: 0.07, blue: 0.12), .black], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+            HGColor.night.ignoresSafeArea()
             VStack(spacing: 24) {
                 HStack {
-                    Button { showVoices = true } label: { Image(systemName: "person.wave.2").font(.title3) }
+                    Button { showVoices = true } label: {
+                        Image(systemName: "person.wave.2").font(.title3).frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel("Stimme auswählen")
                     Spacer()
-                    Text(status).font(.headline).foregroundStyle(.white.opacity(0.8))
+                    Text(status).font(.headline.weight(.medium)).foregroundStyle(.white.opacity(0.7))
                     Spacer()
-                    Color.clear.frame(width: 24)
+                    Color.clear.frame(width: 44, height: 44)
                 }
                 .padding(.horizontal).padding(.top, 8)
 
                 Spacer()
-                Orb(phase: session?.phase ?? .idle, level: session?.level ?? 0)
-                    .frame(width: 220, height: 220)
+                VoiceGhost(phase: session?.phase ?? .idle, level: session?.level ?? 0)
+                    .contentShape(Rectangle())
                     .onTapGesture { session?.interrupt() }
                 Spacer()
 
@@ -356,7 +359,7 @@ struct VoiceChatView: View {
                     if let s = session, !s.answer.isEmpty, s.phase != .listening {
                         Text(Speaker.plain(s.answer)).foregroundStyle(.white)
                     }
-                    if case .error(let msg) = session?.phase { Text(msg).foregroundStyle(.red) }
+                    if case .error(let msg) = session?.phase { Text(msg).foregroundStyle(.white) }
                 }
                 .font(.title3)
                 .multilineTextAlignment(.center)
@@ -368,12 +371,15 @@ struct VoiceChatView: View {
                     Button { session?.toggleMute() } label: {
                         Image(systemName: session?.muted == true ? "mic.slash.fill" : "mic.fill")
                             .font(.title2).frame(width: 64, height: 64)
-                            .background(.white.opacity(session?.muted == true ? 0.3 : 0.12), in: Circle())
+                            .foregroundStyle(session?.muted == true ? HGColor.night : .white)
+                            .background(.white.opacity(session?.muted == true ? 1 : 0.12), in: Circle())
                     }
+                    .accessibilityLabel(session?.muted == true ? "Mikrofon an" : "Stummschalten")
                     Button { close() } label: {
-                        Image(systemName: "xmark").font(.title2.bold()).frame(width: 64, height: 64)
-                            .background(.red.opacity(0.85), in: Circle())
+                        Image(systemName: "xmark").font(.title2.weight(.medium)).frame(width: 64, height: 64)
+                            .background(Color.red, in: Circle())
                     }
+                    .accessibilityLabel("Sprachchat beenden")
                 }
                 .foregroundStyle(.white)
                 .padding(.bottom, 24)
@@ -408,40 +414,38 @@ struct VoiceChatView: View {
     }
 }
 
-/// Leuchtende Kugel: atmet beim Zuhören mit der Stimme, pulsiert beim Sprechen.
-private struct Orb: View {
+/// Der Geist aus dem App-Icon: wächst beim Zuhören mit der Stimme, schaut beim Nachdenken umher,
+/// schwebt beim Sprechen leicht auf und ab.
+private struct VoiceGhost: View {
     let phase: VoiceSession.Phase
     let level: Float
 
     var body: some View {
         TimelineView(.animation) { ctx in
-            let time = ctx.date.timeIntervalSinceReferenceDate
-            let pulse: Double = switch phase {
-            case .listening: 1 + Double(level) * 0.35
-            case .thinking: 1 + 0.05 * sin(time * 4)
-            case .speaking: 1 + 0.08 * sin(time * 7) + 0.04 * sin(time * 13)
-            default: 1
-            }
-            ZStack {
-                Circle().fill(RadialGradient(colors: [colors.0, colors.1.opacity(0.0)], center: .center, startRadius: 10, endRadius: 140))
-                    .scaleEffect(pulse * 1.25).blur(radius: 20)
-                Circle().fill(AngularGradient(colors: [colors.0, colors.1, colors.0], center: .center, angle: .degrees(time * 40)))
-                    .scaleEffect(pulse).blur(radius: 2)
-                    .overlay(Circle().stroke(.white.opacity(0.25), lineWidth: 1).scaleEffect(pulse))
+            let t = ctx.date.timeIntervalSinceReferenceDate
+            let blink = t.truncatingRemainder(dividingBy: 3.4) < 0.14
+            let scale: CGFloat = phase == .listening ? 1 + CGFloat(level) * 0.18 : 1
+            let bob: CGFloat = phase == .speaking ? CGFloat(sin(t * 3)) * 6 : 0
+            let look: CGFloat = phase == .thinking ? CGFloat(sin(t * 1.4)) : 0
+            let open: CGFloat = blink ? 0.1 : (phase == .thinking ? 0.7 : 1)
+            VStack(spacing: 20) {
+                Ghost(width: 140, fill: isError ? .white.opacity(0.4) : .white, look: look, open: open)
+                    .scaleEffect(scale, anchor: .bottom)
+                    .offset(y: bob)
+                Ellipse()
+                    .fill(.black.opacity(0.28))
+                    .frame(width: 112 - bob * 2, height: 12)
+                    .blur(radius: 6)
             }
         }
         .animation(.easeOut(duration: 0.15), value: level)
+        .accessibilityElement()
         .accessibilityLabel("Sprachchat")
     }
 
-    private var colors: (Color, Color) {
-        switch phase {
-        case .listening: return (.cyan, .blue)
-        case .thinking: return (.purple, .indigo)
-        case .speaking: return (.mint, .teal)
-        case .error: return (.red, .orange)
-        case .idle: return (.gray, .gray)
-        }
+    private var isError: Bool {
+        if case .error = phase { return true }
+        return false
     }
 }
 
