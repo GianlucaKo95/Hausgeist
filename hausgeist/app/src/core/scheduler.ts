@@ -13,7 +13,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Config } from "./config.js";
 import { db, listUsers, audit } from "./db.js";
-import { formatEuro, entityAllowed, isSensitiveHaService, approversFor, canApproveAction, type AppUser, type ActionKind } from "./checks.js";
+import { formatEuro, entityAllowed, isSensitiveTarget, ONLY_IF_KEY, approversFor, canApproveAction, type AppUser, type ActionKind } from "./checks.js";
 import type { HomeAssistant } from "../adapters/homeassistant.js";
 import type { ToolContext } from "../tools/context.js";
 import { mailTools } from "../tools/mail.js";
@@ -347,14 +347,27 @@ export class Routines {
     const { data } = await db().from("scheduled_actions").select("*").eq("active", true).lte("run_at", new Date().toISOString()).limit(20);
     for (const a of data ?? []) {
       let result: string;
-      if (!entityAllowed(a.entity_id, this.config.ha_entities) || isSensitiveHaService(a.domain) || isSensitiveHaService(a.entity_id.split(".")[0])) {
+      let conditionInfo: string | null = null;
+      if (!entityAllowed(a.entity_id, this.config.ha_entities) || isSensitiveTarget(a.domain, a.entity_id)) {
         result = "nicht erlaubt (Whitelist oder sicherheitsrelevant)";
       } else {
-        try {
-          await this.ha.callService(a.domain, a.service, { entity_id: a.entity_id, ...(a.data ?? {}) });
-          result = "ok";
-        } catch (e) {
-          result = `Fehler: ${e instanceof Error ? e.message : String(e)}`;
+        const { [ONLY_IF_KEY]: onlyIf, ...data } = (a.data ?? {}) as Record<string, unknown>;
+        const cond = onlyIf as { entity_id: string; condition: AlertCondition; value: string } | undefined;
+        let skip: string | null = null;
+        if (cond) {
+          const state = entityAllowed(cond.entity_id, this.config.ha_entities) ? (await this.ha.state(cond.entity_id).catch(() => null))?.state : undefined;
+          if (state == null || state === "unavailable" || state === "unknown") skip = `übersprungen: ${cond.entity_id} nicht lesbar`;
+          else if (!alertMet(cond.condition, cond.value, state)) skip = `übersprungen: ${cond.entity_id} = ${state}`;
+          else conditionInfo = `${cond.entity_id} = ${state}`;
+        }
+        if (skip) result = skip;
+        else {
+          try {
+            await this.ha.callService(a.domain, a.service, { entity_id: a.entity_id, ...data });
+            result = "ok";
+          } catch (e) {
+            result = `Fehler: ${e instanceof Error ? e.message : String(e)}`;
+          }
         }
       }
       let next = nextRun(new Date(a.run_at), a.repeat);
@@ -364,9 +377,18 @@ export class Routines {
         ...(next ? { run_at: next.toISOString() } : { active: false }),
       }).eq("id", a.id);
       await audit({ agent: "household", action: "scheduled_action", level: 1, result, ref_table: "scheduled_actions", ref_id: a.id });
-      if (result !== "ok") {
+      const what = a.label ?? `${a.domain}.${a.service} ${a.entity_id}`;
+      if (result.startsWith("übersprungen")) {
+        if (result.includes("nicht lesbar")) {
+          const creator = (await listUsers()).find((u) => u.id === a.created_by);
+          if (creator) await this.notifyUsers([creator], "Geplante Schaltung ausgelassen", `${what}: ${result}`);
+        }
+      } else if (result !== "ok") {
         const creator = (await listUsers()).find((u) => u.id === a.created_by);
-        if (creator) await this.notifyUsers([creator], "Geplante Schaltung fehlgeschlagen", `${a.label ?? `${a.domain}.${a.service} ${a.entity_id}`}: ${result}`);
+        if (creator) await this.notifyUsers([creator], "Geplante Schaltung fehlgeschlagen", `${what}: ${result}`);
+      } else if (conditionInfo) {
+        const creator = (await listUsers()).find((u) => u.id === a.created_by);
+        if (creator) await this.notifyUsers([creator], "Hausgeist", `${what} gestartet (${conditionInfo})`);
       }
     }
   }
@@ -394,7 +416,7 @@ export class Routines {
       let extra = "";
       if (a.action) {
         const act = a.action as { domain: string; service: string; entity_id: string; data?: Record<string, unknown> };
-        if (entityAllowed(act.entity_id, this.config.ha_entities) && !isSensitiveHaService(act.domain) && !isSensitiveHaService(act.entity_id.split(".")[0])) {
+        if (entityAllowed(act.entity_id, this.config.ha_entities) && !isSensitiveTarget(act.domain, act.entity_id)) {
           try {
             await this.ha.callService(act.domain, act.service, { entity_id: act.entity_id, ...(act.data ?? {}) });
             extra = `\n→ ${act.entity_id} geschaltet`;

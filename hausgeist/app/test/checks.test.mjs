@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  isValidIban, normalizeIban, payeeStatus, canApprove, approversFor, duplicateKey, suggestAccount,
+  isValidIban, normalizeIban, payeeStatus, canApprove, approversFor, duplicateKey, suggestAccount, isSensitiveTarget,
 } from "../dist/core/checks.js";
 
 const admin = { id: "a", name: "Admin", role: "admin", approval_limit_cents: 0, ha_user_id: "ha-a", notify_service: "mobile_app_a" };
@@ -71,4 +71,12 @@ test("IMAP-Fehler werden je Anbieter erklärt", async () => {
   assert.match(explainImap({ message: "Command failed", authenticationFailed: true }, "imap.gmail.com"), /App-Passwort/);
   assert.match(explainImap({ message: "Command failed", responseText: "Invalid credentials (Failure)" }, "imap.mail.yahoo.com"), /Yahoo/);
   assert.match(explainImap({ code: "ENOTFOUND" }, "imap.gibtsnicht.de"), /nicht gefunden/);
+});
+
+test("Autofenster sind sicherheitsrelevant, Scheibenheizung nicht", () => {
+  assert.equal(isSensitiveTarget("switch", "switch.mg5_window_driver"), true);
+  assert.equal(isSensitiveTarget("switch", "switch.mg5_window_rear_left"), true);
+  assert.equal(isSensitiveTarget("switch", "switch.mg5_front_window_defroster_heating"), false);
+  assert.equal(isSensitiveTarget("switch", "switch.mg5_rear_window_defroster_heating"), false);
+  assert.equal(isSensitiveTarget("lock", "lock.mg5_doors_lock"), true);
 });

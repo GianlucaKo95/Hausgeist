@@ -1,7 +1,7 @@
 import { tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { db } from "../core/db.js";
-import { entityAllowed, isSensitiveHaService } from "../core/checks.js";
+import { entityAllowed, isSensitiveTarget, ONLY_IF_KEY } from "../core/checks.js";
 import { ok, safe, requireAdult, requireAdmin, type ToolContext } from "./context.js";
 import { detectFromHa } from "../core/energy-detect.js";
 
@@ -31,7 +31,7 @@ export function householdTools(ctx: ToolContext) {
       if (!allowed(a.entity_id)) throw new Error(`${a.entity_id} ist nicht freigegeben`);
       if (!a.entity_id.startsWith(`${a.domain}.`) && a.domain !== "homeassistant")
         throw new Error("Domain und entity_id passen nicht zusammen");
-      if (isSensitiveHaService(a.domain) || isSensitiveHaService(a.entity_id.split(".")[0])) {
+      if (isSensitiveTarget(a.domain, a.entity_id)) {
         const r = await ctx.actions.request("ha_service", { domain: a.domain, service: a.service, entity_id: a.entity_id, data: a.data ?? {} },
           { agent: "household", summary: `${a.domain}.${a.service} → ${a.entity_id}`, requestedBy: ctx.user });
         return ok({ status: "Sicherheitsrelevant – Freigabe angefragt", an: r.approvers });
@@ -113,25 +113,37 @@ export function householdTools(ctx: ToolContext) {
       return ok(areas.map((a) => ({ area: a.area, entities: a.entities.filter(allowed) })).filter((a) => a.entities.length > 0));
     })),
 
-    tool("schedule_device_action", "Gerät zu einem Zeitpunkt schalten, optional wiederkehrend (z. B. Waschmaschine um 13 Uhr, wenn PV-Überschuss erwartet wird). Sicherheitsrelevante Geräte können nicht geplant werden.", {
+    tool("schedule_device_action", "Gerät zu einem Zeitpunkt schalten, optional wiederkehrend und optional nur unter einer Bedingung (z. B. werktags 7:00 Auto-Scheibenheizung, aber nur wenn die Außentemperatur unter 2 °C liegt; Waschmaschine um 13 Uhr, wenn der Speicher über 80 % ist). Ist die Bedingung nicht erfüllt, wird still übersprungen; wird geschaltet, kommt eine Push-Nachricht. Sicherheitsrelevante Geräte (auch Autofenster) können nicht geplant werden.", {
       run_at: z.string().describe("ISO-Zeit mit Zeitzone"),
       repeat: z.enum(["none", "daily", "weekdays", "weekly"]).default("none"),
       domain: z.string(), service: z.string(), entity_id: z.string(),
       data: z.record(z.string(), z.unknown()).optional(),
       label: z.string().optional(),
+      only_if: z.object({
+        entity_id: z.string().describe("z. B. Außentemperatur-Sensor des Autos oder der Wetterstation"),
+        condition: z.enum(["below", "above", "equals"]),
+        value: z.string(),
+      }).optional().describe("Nur schalten, wenn dieser Zustand zum Zeitpunkt zutrifft"),
     }, safe(async (a) => {
       requireAdult(ctx);
       if (!allowed(a.entity_id)) throw new Error(`${a.entity_id} ist nicht freigegeben`);
-      if (isSensitiveHaService(a.domain) || isSensitiveHaService(a.entity_id.split(".")[0]))
+      if (isSensitiveTarget(a.domain, a.entity_id))
         throw new Error("Sicherheitsrelevante Geräte (Schlösser, Alarm, Tore …) werden nicht zeitgesteuert geschaltet");
+      if (a.only_if) {
+        if (!allowed(a.only_if.entity_id)) throw new Error(`${a.only_if.entity_id} ist nicht freigegeben`);
+        if (a.only_if.condition !== "equals" && Number.isNaN(Number(a.only_if.value))) throw new Error("Für below/above wird eine Zahl gebraucht");
+      }
       const at = new Date(a.run_at);
       if (Number.isNaN(at.getTime())) throw new Error("Zeitpunkt nicht lesbar");
+      // Bedingung steckt im data-JSON (kein neues Datenbankfeld nötig) und wird vor dem Schalten entfernt.
+      const data = { ...(a.data ?? {}), ...(a.only_if ? { [ONLY_IF_KEY]: a.only_if } : {}) };
       const { error } = await db().from("scheduled_actions").insert({
         run_at: at.toISOString(), repeat: a.repeat, domain: a.domain, service: a.service, entity_id: a.entity_id,
-        data: a.data ?? {}, label: a.label ?? null, created_by: ctx.user.id,
+        data, label: a.label ?? null, created_by: ctx.user.id,
       });
       if (error) throw error;
-      return ok(`Geplant: ${a.domain}.${a.service} → ${a.entity_id} am ${at.toLocaleString("de-DE", { timeZone: "Europe/Berlin", dateStyle: "short", timeStyle: "short" })}${a.repeat !== "none" ? ` (${a.repeat})` : ""}`);
+      const cond = a.only_if ? `, nur wenn ${a.only_if.entity_id} ${a.only_if.condition} ${a.only_if.value}` : "";
+      return ok(`Geplant: ${a.domain}.${a.service} → ${a.entity_id} am ${at.toLocaleString("de-DE", { timeZone: "Europe/Berlin", dateStyle: "short", timeStyle: "short" })}${a.repeat !== "none" ? ` (${a.repeat})` : ""}${cond}`);
     })),
 
     tool("list_scheduled_actions", "Geplante Schaltungen.", {}, safe(async () => {
@@ -161,7 +173,7 @@ export function householdTools(ctx: ToolContext) {
         throw new Error("Für below/above wird eine Zahl als value gebraucht");
       if (a.action) {
         if (!allowed(a.action.entity_id)) throw new Error(`${a.action.entity_id} ist nicht freigegeben`);
-        if (isSensitiveHaService(a.action.domain) || isSensitiveHaService(a.action.entity_id.split(".")[0]))
+        if (isSensitiveTarget(a.action.domain, a.action.entity_id))
           throw new Error("Sicherheitsrelevante Geräte können nicht automatisch geschaltet werden");
       }
       const { error } = await db().from("alerts").insert({

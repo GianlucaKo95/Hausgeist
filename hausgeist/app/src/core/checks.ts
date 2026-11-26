@@ -122,6 +122,16 @@ export function isSensitiveHaService(domain: string): boolean {
   return SENSITIVE_HA_DOMAINS.includes(domain);
 }
 
+/** Einzelne Geräte, die trotz harmloser Domain sicherheitsrelevant sind – z. B. Autofenster (beim MG ein switch). */
+const SENSITIVE_ENTITY = /window_(driver|passenger|rear)|sunroof|schiebedach|fenster_(fahrer|beifahrer|hinten)/i;
+
+export function isSensitiveTarget(domain: string, entityId: string): boolean {
+  return isSensitiveHaService(domain) || isSensitiveHaService(entityId.split(".")[0]) || SENSITIVE_ENTITY.test(entityId);
+}
+
+/** Schlüssel im data-JSON geplanter Schaltungen für eine Bedingung („nur wenn …“). */
+export const ONLY_IF_KEY = "_only_if";
+
 /** Entity-Whitelist mit einfachen Platzhaltern, z. B. "climate.*" oder "sensor.pv_*". */
 export function entityAllowed(entityId: string, patterns: string[]): boolean {
   return patterns.some((p) => {

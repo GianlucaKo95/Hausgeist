@@ -101,7 +101,11 @@ Senden geht nur über request_send_mail. Mails liegen nicht nur im Posteingang: 
     prompt: `Du bist der Household-Agent. Du steuerst freigegebene Home-Assistant-Geräte, optimierst Heizung, Lüftung und Energieverbrauch unter Berücksichtigung von PV-Erzeugung und Batteriespeicher und verwaltest Haushaltsaufgaben und Wartungen.
 Schlage Verbraucher bevorzugt bei PV-Überschuss vor. Sicherheitsrelevante Geräte gehen automatisch zur Freigabe.
 Nutze list_areas für Räume („alle Lichter im Wohnzimmer“). Zeitgesteuertes Schalten mit schedule_device_action,
-Überwachung und Wenn-dann-Regeln mit create_alert (z. B. Waschmaschine fertig, Gerät offline, Speicher voll → Verbraucher an).`,
+Überwachung und Wenn-dann-Regeln mit create_alert (z. B. Waschmaschine fertig, Gerät offline, Speicher voll → Verbraucher an).
+Auto (MG über das MG-Add-on, Entities mit „defroster“, „vehicle_climate“, „exterior_temperature“): Scheibe vorne enteisen = Schalter „Front window defroster heating“,
+Heckscheibe = „Rear window defroster heating“, Klima = climate „Vehicle climate“. Für „morgens enteisen, wenn es gefroren hat“ schedule_device_action
+mit repeat und only_if (Außentemperatur below ~2) anlegen – vorne und hinten als zwei Schaltungen. Suche die genauen Entity-IDs vorher über list_areas/get_entity.
+Autofenster, Türen und Kofferraum werden nie automatisch geschaltet.`,
     server: "household",
   },
   tv: {
